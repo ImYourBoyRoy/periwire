@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/usbip-proto", "crates/periwire", "crates/periwire-client", "gui/src-tauri"]
+# The GUI is built explicitly (`cargo build -p periwire-gui`); a plain `cargo build` stays light.
+default-members = ["crates/usbip-proto", "crates/periwire", "crates/periwire-client"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/ImYourBoyRoy/periwire"
