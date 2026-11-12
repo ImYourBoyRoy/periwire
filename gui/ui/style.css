@@ -303,7 +303,8 @@ button, input { font: inherit; color: inherit; }
   .tile { padding: 14px 16px; } .tile .value { font-size: 28px; }
   .item { flex-wrap: wrap; gap: 10px; } .item .spark { display: none; } .item .stats { width: 100%; order: 5; }
   #toasts { right: 12px; left: 12px; bottom: 74px; align-items: stretch; } .toast { max-width: none; }
-  .demo-banner { top: 4px; font-size: 10.5px; }
+  .demo-banner { top: 4px; font-size: 10.5px; white-space: nowrap; }
+  body.demo .top { padding-top: 40px; } /* room for the demo banner, which would otherwise sit on the title */
   .modal { padding: 20px; } .modal .actions { flex-wrap: wrap; } .modal .actions .btn { flex: 1; }
   .row.stack-sm { flex-direction: column; align-items: stretch; }
   .check .fix { word-break: break-all; }

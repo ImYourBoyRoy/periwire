@@ -43,6 +43,12 @@ afford to lose connectivity to, and unmount the device locally first.
 Other scripts: `usb-diag.sh` (read-only USB state), `loopback-bench.sh`, `mac-build.sh` (build/test on a macOS machine
 over ssh), `make-icons.py` (regenerate app icons).
 
+## Screenshots
+
+The images in `docs/img/` (WebP) are generated from the app's demo mode, so they never show real devices or machines. After a UI change run
+`python3 tools/screenshots.py` (needs `pip install playwright pillow` and a Chrome or Chromium; set `CHROME=/path` if it is not on `PATH`) and commit
+the result. `python3 tools/screenshots.py themes` regenerates only the images whose name contains "themes".
+
 ## Conventions
 
 - Everything the UI can do must be reachable through the control API ([API](API.md)), the CLI, and an MCP tool.

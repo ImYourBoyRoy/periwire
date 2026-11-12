@@ -13,6 +13,14 @@ as if it were plugged in there — natively, with its own drivers.
 - **Three equal front ends:** a command line, an [MCP server](docs/MCP.md) for AI assistants, and a desktop app with a
   tray icon. All three drive the same local [control API](docs/API.md).
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/overview-dark.webp">
+    <img src="docs/img/overview-light.webp" alt="The PeriWire desktop app: an overview of shared devices, imported devices, throughput and active connections" width="880">
+  </picture>
+</p>
+<p align="center"><sub>The desktop app in its built-in demo mode (simulated devices). The command line and the <a href="docs/MCP.md">MCP server</a> do the same things.</sub></p>
+
 > Status: early (0.1). Verified end to end on Linux, macOS (import works with the host-controller entitlement or SIP
 > relaxed) and Windows Server 2025 (the signed driver is carried inside `periwire.exe` and installed with one click).
 > See [platform status](docs/PLATFORMS.md) and [what is tested](docs/TESTING.md).
@@ -48,6 +56,19 @@ Something not working? `periwire doctor` checks everything and tells you how to 
 Prefer clicking? Start the desktop app (`periwire-gui`), it does all of the above: switch devices on to share them,
 browse another computer, attach with one click, and see live throughput. Try it risk-free in your browser with the
 built-in demo mode: open `gui/ui/index.html` through any static file server.
+
+## The desktop app
+
+Share a device with one switch, connect to another computer with one click, and see what is happening live. Six themes (three dark, three light,
+or follow the system), and it fits phones and narrow windows too. All images are the app's demo mode; see [the desktop app](docs/GUI.md).
+
+| Share | Connect |
+|:--:|:--:|
+| <img src="docs/img/share-dark.webp" alt="Share page: every USB device on this computer with a switch to share it" width="440"> | <img src="docs/img/connect-light.webp" alt="Connect page: browse another computer, attach a device, remembered connections" width="440"> |
+| **Trust** | **Windows: one-click driver install** |
+| <img src="docs/img/trust-dark.webp" alt="Trust page: your fingerprint, trusted computers and the pairing flow" width="440"> | <img src="docs/img/windows-driver-light.webp" alt="Windows: a one-time setup banner with an Install driver button" width="440"> |
+
+<p align="center"><img src="docs/img/themes.webp" alt="The six themes: Clay, Moss and Plum (dark); Linen, Rose and Lagoon (light)" width="880"></p>
 
 ## Install
 

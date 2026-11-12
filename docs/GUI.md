@@ -4,15 +4,30 @@
 daemon in real time. It is a control panel only — the **daemon does the work**, so devices keep flowing when the window
 is closed and the app can be restarted any time.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="img/overview-dark.webp">
+    <img src="img/overview-light.webp" alt="Overview page in the desktop app" width="860">
+  </picture>
+</p>
+
 ## What you get
 
-- **Overview** — live tiles (shared, imported, throughput), an animated topology map, and every active connection with
+- **Overview** (above) — live tiles (shared, imported, throughput), an animated topology map, and every active connection with
   speed graphs and Eject / Disconnect buttons.
 - **Share** — every USB device on this computer with a switch; "in use by …" and "mounted here" shown on the card.
+
+  <img src="img/share-dark.webp" alt="Share page" width="760">
 - **Connect** — browse another computer, attach with one click, optional automatic reconnect, remembered connections.
+
+  <img src="img/connect-light.webp" alt="Connect page" width="760">
 - **Trust** — your fingerprint (with a visual identicon), trusted computers, and a guided "read fingerprint → compare →
   trust" flow.
+
+  <img src="img/trust-dark.webp" alt="Trust page" width="760">
 - **Health** — the `doctor` checks with fixes. **Activity** — the live daemon log.
+
+  <img src="img/health-light.webp" alt="Health page" width="370"> <img src="img/activity-dark.webp" alt="Activity page" width="370">
 - **Tray** — icon turns green while anything is connected and amber when the daemon is down; the menu lists imported
   devices with one-click *Eject*, shared devices in use with *Disconnect*, and *Start daemon* when it is not running.
   Closing the window hides it to the tray; *Quit* in the tray menu exits.
@@ -23,6 +38,8 @@ is closed and the app can be restarted any time.
   kind such as *Storage drive*, *Android device*, *iPad*, *Apple device in DFU mode*. Connection cards show the same, with the raw
   ids tucked behind a click. Computers you browse show the names *they* report.
 - **Fits any screen.** Sidebar → icon rail → bottom tab bar on phones and narrow windows; cards reflow to one column.
+
+  <img src="img/mobile-dark.webp" alt="The app on a phone-sized screen" width="260">
 - **Reset fingerprint** lives at the bottom of Trust.
 
 ## Run
@@ -61,6 +78,8 @@ runs a background task that subscribes to events, refreshes the tray, and emits 
 
 ## Built-in help
 
+<img src="img/help-dark.webp" alt="The help drawer" width="760">
+
 The **?** button in the top bar (or the `?` key) opens a help drawer with four tabs: *This page* (what the current page shows and how to
 use it, in a few plain steps, with the expert detail folded away), *Basics* (three steps to share and use a device), *Terms* (a plain-English
 glossary) and *For experts* (protocol, ports, files, speed, limits and a command-line cheat sheet). A fresh install also shows a
@@ -80,6 +99,8 @@ every computer that imports the drive gets it write-protected. Changing it disco
 
 ## Windows: one-click driver install
 
+<img src="img/windows-driver-light.webp" alt="Connect page on Windows with the one-time driver setup banner" width="760">
+
 On Windows, when the virtual USB driver is missing, the **Connect** page shows a "One-time setup" banner with an
 **Install driver** button. It asks for confirmation, then calls the daemon (`driver.install`), which unpacks and installs the
 signed driver carried inside PeriWire and reports whether Windows wants a restart. The daemon must run as Administrator (for
@@ -88,3 +109,5 @@ example via `periwire service install`); otherwise the app says so. Try it in de
 ## Themes
 
 The palette button in the top-right corner opens the theme picker: three dark themes (Clay, Moss, Plum), three light themes (Linen, Rose, Lagoon), or **Match system**. The choice is remembered on that device.
+
+<img src="img/themes.webp" alt="The six themes" width="860">

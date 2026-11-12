@@ -35,6 +35,10 @@ periwire share 2-2        # or by model: periwire share 1234:5678
 port, but also any identical second device). A device that is **mounted on A** (a drive that was auto-mounted) cannot be
 taken until you eject/unmount it there: periwire refuses rather than yank a filesystem away.
 
+Prefer a window? In the desktop app, switch the device on in **Share**:
+
+<img src="img/share-dark.webp" alt="Share page: switch a device on to share it" width="700">
+
 ## 3. Pair the two computers
 
 Each computer has a certificate and trusts only fingerprints you approved. Both directions are needed.
@@ -58,6 +62,10 @@ periwire attach A.local 2-2 --auto # …and re-attach automatically after drops/
 periwire status
 periwire detach 2-2                # safe eject (unmounts first), the device returns to A
 ```
+
+In the desktop app, **Connect** does the same with a click (browse the other computer, then attach):
+
+<img src="img/connect-light.webp" alt="Connect page" width="700">
 
 ## Situations
 
