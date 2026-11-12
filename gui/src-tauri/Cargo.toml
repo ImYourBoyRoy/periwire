@@ -1,0 +1,17 @@
+[package]
+name = "periwire-gui"
+description = "periwire desktop app: tray icon and window for the periwire daemon"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+periwire-client = { path = "../../crates/periwire-client" }

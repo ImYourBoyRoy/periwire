@@ -1,0 +1,19 @@
+# secrets / personal
+.env
+tools/lab.env
+private/
+.state/
+# build
+target/
+node_modules/
+dist/
+# logs / OS / editor
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.claude/launch.json
+.venv/
+__pycache__/
+*.pyc
