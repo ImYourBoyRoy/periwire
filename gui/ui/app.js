@@ -636,7 +636,7 @@ on("connection", async (c) => { S.connected = c; renderActions(); if (c) { await
 on("event", (ev) => { if (ev.event === "log") addLog(ev.data.line); });
 on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);
-if (demo) document.body.append(h("div", { class: "demo-banner" }, "Demo mode — simulated devices"));
+if (demo) { document.body.classList.add("demo"); document.body.append(h("div", { class: "demo-banner" }, "Demo mode — simulated devices")); }
 start();
 go(location.hash.slice(1) && VIEWS.some((v) => v.id === location.hash.slice(1)) ? location.hash.slice(1) : "overview");
 let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { topoSig = ""; renderAll(); const i = VIEWS.findIndex((x) => x.id === S.view); const b = nav.children[i + 1]; if (b) pill.style.transform = `translateY(${b.offsetTop}px)`; }, 120); });
