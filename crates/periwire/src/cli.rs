@@ -267,7 +267,7 @@ pub fn service_text(user_mode: bool) -> String {
         return format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>io.github.imyourboyroy.periwire.daemon</string>
+  <key>Label</key><string>com.glassprovidence.periwire.daemon</string>
   <key>ProgramArguments</key><array><string>{exe}</string><string>daemon</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
