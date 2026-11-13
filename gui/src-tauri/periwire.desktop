@@ -1,0 +1,16 @@
+[Desktop Entry]
+{{#if categories}}
+Categories={{categories}}
+{{/if}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=PeriWire
+Terminal=false
+Type=Application
+{{#if mime_type}}
+MimeType={{mime_type}}
+{{/if}}
