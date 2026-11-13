@@ -34,6 +34,43 @@ exporter (any OS) ──mutual TLS──▶ urb.rs (USB/IP client) ──▶ mac
 2. **Development:** disable SIP and run as root, or disable SIP + `amfi_get_out_of_my_way=1` and ad-hoc sign with
    `crates/periwire/entitlements.plist`.
 
+## Requesting the entitlement from Apple (checked 2026-11-13)
+
+Plan: get `com.apple.developer.usb.host-controller-interface` enabled for the Apple Developer team so the daemon runs on macOS
+with SIP and AMFI left on.
+
+What Apple says (all of it comes from one Apple Developer Forums thread, <https://developer.apple.com/forums/thread/802495>; there is no
+documentation page for this entitlement and no request form in the developer portal):
+
+- The entitlement is *restricted* (a provisioning profile must authorise it, see Apple's TN3125 on provisioning profiles) and *managed*
+  (it is not in the App ID capabilities list). Request volume is low, so Apple never built a portal form for it.
+- Apple DTS (Kevin Elliott) says to file a **Feedback Assistant** report at <https://feedbackassistant.apple.com/> with:
+  - OS: **macOS**
+  - Title: `Request for Entitlement - com.apple.developer.usb.host-controller-interface`
+  - Problem area: **USB**; type: **Other Bug** (one forum poster reported the "Other Bug" choice missing and used "Incorrect/Unexpected
+    Behavior"; pick the closest "other" option the form offers)
+  - Description: the team ID, a general overview of the product, and links to marketing material for the product or company.
+  A report missing those items cannot be acted on. The question the approving engineer cares about is what you are building and why
+  it needs to simulate a USB host controller. Apple publishes no turnaround time.
+- Not verified from any Apple page: whether the grant is per team or per App ID; whether a Developer ID, development or Mac App Store
+  build needs the profile embedded; whether the Mac App Store permits it. Ask these in the report or after approval.
+
+Packaging consequence: a restricted entitlement is honoured only for a signed **app bundle** with the matching provisioning profile
+embedded as `Contents/embedded.provisionprofile`. The bare `periwire` command-line binary cannot carry a profile, so the macOS importer
+has to ship inside an app bundle (the desktop app, or a small helper app the daemon launches) once the entitlement is granted. Until
+then keep using the SIP-relaxed throwaway guest described below.
+
+Draft text for the report (replace the team and links if they change):
+
+> Title: Request for Entitlement - com.apple.developer.usb.host-controller-interface
+>
+> We request the com.apple.developer.usb.host-controller-interface entitlement for team ID A9U25S7QS4 (Glass Providence LLC).
+> The product is PeriWire, an open-source (MIT) tool that forwards USB devices over the network with mutual-TLS pairing, so a device
+> plugged into one computer appears as a locally connected device on another. On macOS the importer creates a virtual host
+> controller with IOUSBHostControllerInterface and attaches the remote device to it; no kernel extension is used. Today we use it to
+> give a macOS build VM access to an iPad for Xcode device testing, which currently requires disabling SIP. Source and documentation:
+> https://github.com/ImYourBoyRoy/periwire. We will ship it as a signed app bundle with the matching provisioning profile.
+
 ## Test plan (needs a SIP-relaxed guest — never the production `macOS` guest)
 
 1. Create a copy-on-write overlay on the shut-off `macOS-q35-5.2-rollback` clone's disk (base stays untouched), plus copies of
