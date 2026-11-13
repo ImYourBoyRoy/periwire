@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="300 205 640 825" role="img" aria-label="PeriWire P-shaped wire mark">
+  <g fill="none" stroke="currentColor" stroke-width="53.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M515 310 H714 C801 310 868 377 868 474 C868 590 794 690 712 690 H521 C463 690 425 731 425 783 V934"/>
+    <path d="M425 602 C425 547 467 504 521 504 H688"/>
+    <path d="M425 601 V934"/>
+  </g>
+  <g fill="currentColor">
+    <path fill-rule="evenodd" d="M440 254 A56 56 0 1 1 440 366 A56 56 0 1 1 440 254 Z M440 282 A28 28 0 1 0 440 338 A28 28 0 1 0 440 282 Z"/>
+    <rect x="652" y="458" width="81" height="84" rx="19"/>
+    <circle cx="425" cy="935" r="52"/>
+  </g>
+</svg>

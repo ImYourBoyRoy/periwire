@@ -41,7 +41,7 @@ and a `.env` with `sudo_password` (git-ignored; used for `sudo` on stdin only). 
 afford to lose connectivity to, and unmount the device locally first.
 
 Other scripts: `usb-diag.sh` (read-only USB state), `loopback-bench.sh`, `mac-build.sh` (build/test on a macOS machine
-over ssh), `make-icons.py` (regenerate app icons).
+over ssh), `make-icons.py` (regenerate every icon from the artwork in `images/`).
 
 ## Screenshots
 

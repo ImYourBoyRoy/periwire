@@ -3,8 +3,12 @@
 // tray icon in sync and relays daemon events to the window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "linux")]
+mod launcher;
+
 use periwire_client::Client;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
@@ -124,7 +128,7 @@ fn tray_view(st: Option<&Value>) -> (Vec<Item>, Look, String) {
     };
     items.push(Item::Separator);
     items.push(Item::Action("open".into(), "Open periwire".into()));
-    items.push(Item::Action("quit".into(), "Quit".into()));
+    items.push(Item::Action("quit".into(), "Quit the app (the daemon keeps running)".into()));
     (items, look, tip)
 }
 
@@ -196,7 +200,22 @@ fn refresh_tray(app: &AppHandle, st: Option<&Value>) {
     }
 }
 
+/// Started by a daemon (`--follow-daemon`) just to show the icon: leave again when that daemon is gone, unless somebody opened the window.
+static FOLLOW_DAEMON: AtomicBool = AtomicBool::new(false);
+/// Whether the tray icon exists. Without one, closing the window must quit: hiding it would leave nothing to bring it back.
+static TRAY_OK: AtomicBool = AtomicBool::new(false);
+
+/// How long a daemon may be gone before an app that only followed it leaves (longer if it never saw the daemon at all).
+const FOLLOW_GRACE: Duration = Duration::from_secs(10);
+const FOLLOW_NEVER_SEEN: Duration = Duration::from_secs(30);
+
+/// True when this app should now leave because the daemon it followed is gone.
+fn should_follow_out(follow: bool, seen_daemon: bool, gone_for: Duration, window_visible: bool) -> bool {
+    follow && !window_visible && gone_for >= if seen_daemon { FOLLOW_GRACE } else { FOLLOW_NEVER_SEEN }
+}
+
 fn show_main(app: &AppHandle) {
+    FOLLOW_DAEMON.store(false, Ordering::Relaxed); // somebody is using the app now: it stays until quit
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -216,8 +235,10 @@ fn announce_connection(app: &AppHandle, last: &mut Option<bool>, connected: bool
 
 async fn watch_daemon(app: AppHandle) {
     let mut announced: Option<bool> = None;
+    let (mut seen_daemon, mut gone_since) = (false, std::time::Instant::now());
     loop {
         if let Ok(mut c) = Client::connect_default().await {
+            seen_daemon = true;
             announce_connection(&app, &mut announced, true);
             if c.call("subscribe", json!({})).await.is_ok() {
                 loop {
@@ -243,21 +264,50 @@ async fn watch_daemon(app: AppHandle) {
                 }
             }
         }
+        // (a connection that just ended counts as gone from now)
+        if announced == Some(true) {
+            gone_since = std::time::Instant::now();
+        }
         announce_connection(&app, &mut announced, false);
         refresh_tray(&app, None);
+        let visible = app.get_webview_window("main").and_then(|w| w.is_visible().ok()).unwrap_or(false);
+        if should_follow_out(FOLLOW_DAEMON.load(Ordering::Relaxed), seen_daemon, gone_since.elapsed(), visible) {
+            app.exit(0);
+            return;
+        }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
 fn main() {
+    // `--register-launcher`: add the app to the launcher (Linux, when not installed from a package) and leave; the same happens at every start.
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::args().any(|a| a == "--register-launcher") {
+            match launcher::ensure() {
+                Some(o) => println!("launcher: {o:?}"),
+                None => std::process::exit(1),
+            }
+            return;
+        }
+        if !cfg!(debug_assertions) {
+            launcher::ensure();
+        }
+    }
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A daemon starting the icon again (`--hidden`) must not pop the window up over what the user is doing.
+            if !args.iter().any(|a| a == "--hidden") {
+                show_main(app);
+            }
+        }))
         .invoke_handler(tauri::generate_handler![api, start_daemon])
         .setup(|app| {
             let handle = app.handle().clone();
             let (items, _, _) = tray_view(None);
             let menu = build_menu(&handle, &items)?;
-            TrayIconBuilder::with_id("main")
+            FOLLOW_DAEMON.store(std::env::args().any(|a| a == "--follow-daemon"), Ordering::Relaxed);
+            let tray = TrayIconBuilder::with_id("main")
                 .icon(Image::from_bytes(TRAY)?)
                 .tooltip("periwire")
                 .menu(&menu)
@@ -301,8 +351,13 @@ fn main() {
                         }
                     }
                 })
-                .build(app)?;
-            if std::env::args().any(|a| a == "--hidden") {
+                .build(app);
+            match tray {
+                Ok(_) => TRAY_OK.store(true, Ordering::Relaxed),
+                // A desktop without a tray (no status-notifier host) still gets the window; closing it then quits.
+                Err(e) => eprintln!("periwire: no tray icon here ({e}); the window stays the only way in"),
+            }
+            if std::env::args().any(|a| a == "--hidden") && TRAY_OK.load(Ordering::Relaxed) {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
@@ -311,10 +366,12 @@ fn main() {
             Ok(())
         })
         .on_window_event(|w, ev| {
-            // Closing the window keeps the app (and its tray icon) running.
+            // Closing the window keeps the app (and its tray icon) running; the tray's menu quits it.
             if let WindowEvent::CloseRequested { api, .. } = ev {
-                api.prevent_close();
-                let _ = w.hide();
+                if TRAY_OK.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = w.hide();
+                }
             }
         })
         .run(tauri::generate_context!())
@@ -331,6 +388,17 @@ mod tests {
             "sessions": (0..sess).map(|i| json!({"id": i, "busid": "2-1", "peer": "10.0.0.2", "peer_name": ""})).collect::<Vec<_>>(),
             "shares": [], "export": {"state": "listening"}
         })
+    }
+
+    #[test]
+    fn an_app_that_only_followed_the_daemon_leaves_with_it() {
+        let g = Duration::from_secs(11);
+        assert!(should_follow_out(true, true, g, false), "daemon gone, nobody looking: leave");
+        assert!(!should_follow_out(true, true, Duration::from_secs(3), false), "not for a short gap (the daemon restarting)");
+        assert!(!should_follow_out(true, true, g, true), "never while the window is open");
+        assert!(!should_follow_out(false, true, g, false), "an app somebody started stays");
+        assert!(!should_follow_out(true, false, g, false), "a daemon not yet seen gets longer");
+        assert!(should_follow_out(true, false, Duration::from_secs(31), false));
     }
 
     #[test]

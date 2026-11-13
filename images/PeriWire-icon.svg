@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+  <title id="title">PeriWire — connected P icon</title>
+  <desc id="desc">An ivory continuous P-shaped peripheral wire with circular and square terminals on a matte terracotta-to-caramel rounded square.</desc>
+  <defs>
+    <!-- Background color is intentionally independent of the app's runtime theme. -->
+    <linearGradient id="clay" x1="0" y1="0" x2="0.20" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#D88959"/>
+      <stop offset="0.26" stop-color="#B75D3C"/>
+      <stop offset="0.54" stop-color="#A44B2D"/>
+      <stop offset="0.78" stop-color="#C16A40"/>
+      <stop offset="1" stop-color="#ED9A5E"/>
+    </linearGradient>
+    <radialGradient id="topGlow" cx="0.18" cy="0.06" r="0.73">
+      <stop offset="0" stop-color="#FFD2AA" stop-opacity="0.24"/>
+      <stop offset="0.60" stop-color="#EDA26F" stop-opacity="0.045"/>
+      <stop offset="1" stop-color="#ECA16F" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bottomGlow" cx="0.88" cy="1.03" r="0.67">
+      <stop offset="0" stop-color="#FFB671" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#FFB671" stop-opacity="0"/>
+    </radialGradient>
+    <path id="tile" d="M305 35 H949 C1099 35 1204 147 1204 303 V946 C1204 1105 1096 1205 946 1205 H305 C154 1205 35 1097 35 946 V306 C35 153 150 35 305 35 Z"/>
+    <clipPath id="roundTile"><use href="#tile"/></clipPath>
+    <filter id="markShadow" x="-15%" y="-15%" width="130%" height="135%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+      <feOffset in="blur" dy="9" result="shift"/>
+      <feFlood flood-color="#59220E" flood-opacity="0.13" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="shift" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Transparent outside the rounded-square silhouette. -->
+  <use href="#tile" fill="url(#clay)"/>
+  <g clip-path="url(#roundTile)">
+    <rect x="0" y="0" width="1254" height="1254" fill="url(#topGlow)"/>
+    <rect x="0" y="0" width="1254" height="1254" fill="url(#bottomGlow)"/>
+    <!-- Broad reflected-light arc; low enough contrast to remain matte. -->
+    <path d="M35 304 C248 485 787 489 1204 282 L1204 35 H35 Z" fill="#FFF7E5" opacity="0.025"/>
+  </g>
+
+  <!-- The single optical mark has three endpoint types: ring, block, node. -->
+  <g>
+  <g fill="none" stroke="#FCF4E8" stroke-width="53.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#markShadow)">
+    <!-- P-shaped network trunk: upper endpoint to the remote device and downward to the local device. -->
+    <path d="M515 310 H714 C801 310 868 377 868 474 C868 590 794 690 712 690 H521 C463 690 425 731 425 783 V934"/>
+    <!-- Internal device branch joining the main trunk. -->
+    <path d="M425 602 C425 547 467 504 521 504 H688"/>
+    <!-- Explicit shared vertical trunk for all three terminals. -->
+    <path d="M425 601 V934"/>
+  </g>
+  <g fill="#FCF4E8">
+    <!-- Ring endpoint, with true cut-out showing the gradient beneath. -->
+    <path fill-rule="evenodd" d="M440 254 A56 56 0 1 1 440 366 A56 56 0 1 1 440 254 Z M440 282 A28 28 0 1 0 440 338 A28 28 0 1 0 440 282 Z"/>
+    <rect x="652" y="458" width="81" height="84" rx="19"/>
+    <circle cx="425" cy="935" r="52"/>
+  </g>
+  </g>
+</svg>

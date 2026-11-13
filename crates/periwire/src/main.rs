@@ -19,6 +19,7 @@ mod mcp;
 mod ntfs;
 mod resume;
 mod tls;
+mod tray;
 mod ui;
 mod urb;
 #[cfg(windows)]
@@ -83,6 +84,9 @@ enum Cmd {
         /// Socket permissions in octal (default 660).
         #[arg(long, value_name = "MODE")]
         socket_mode: Option<String>,
+        /// Do not start the taskbar icon (the desktop app's tray) alongside the daemon.
+        #[arg(long)]
+        no_tray: bool,
     },
     /// Overview: daemon, what you share, what you imported, trusted machines.
     Status,
@@ -271,6 +275,7 @@ pub struct RunOpts {
     pub socket: Option<String>,
     pub socket_group: Option<String>,
     pub socket_mode: Option<u32>,
+    pub no_tray: bool,
 }
 
 /// Error that carries a process exit code.
@@ -318,12 +323,12 @@ async fn main() {
 async fn run(cli: Cli) -> Result<i32> {
     let j = cli.json;
     match cli.cmd {
-        Cmd::Daemon { listen, no_export, share, daemon_socket, socket_group, socket_mode } => {
+        Cmd::Daemon { listen, no_export, share, daemon_socket, socket_group, socket_mode, no_tray } => {
             let socket_mode = match socket_mode {
                 Some(m) => Some(u32::from_str_radix(&m, 8).map_err(|_| anyhow::anyhow!("--socket-mode must be octal, like 660"))?),
                 None => None,
             };
-            daemon::run(RunOpts { listen, no_export, share, socket: daemon_socket.or(cli.socket), socket_group, socket_mode }).await?;
+            daemon::run(RunOpts { listen, no_export, share, socket: daemon_socket.or(cli.socket), socket_group, socket_mode, no_tray }).await?;
             Ok(0)
         }
         Cmd::Status => cli::status(&mut open(false).await?, j).await,
@@ -583,6 +588,9 @@ fn sh(cmd: &str, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Starts the taskbar icon for whoever logs in (Linux, when the daemon is a system service).
+const TRAY_AUTOSTART: &str = "/etc/xdg/autostart/periwire-tray.desktop";
+
 fn service_install() -> Result<i32> {
     if cfg!(windows) {
         // A console program is not a native Windows service; run it elevated at logon through Task Scheduler.
@@ -603,6 +611,15 @@ fn service_install() -> Result<i32> {
     sh("systemctl", &["daemon-reload"])?;
     sh("systemctl", &["enable", "--now", "periwire.service"])?;
     println!("installed and started periwire.service. Let your user control it: sudo usermod -aG periwire $USER (then log in again)");
+    // A service has no desktop to show an icon on: have the desktop app put it up when somebody logs in.
+    match tray::gui_path() {
+        Some(gui) => {
+            std::fs::create_dir_all("/etc/xdg/autostart")?;
+            std::fs::write(TRAY_AUTOSTART, tray::autostart_entry(&gui))?;
+            println!("added the taskbar icon at login ({TRAY_AUTOSTART})");
+        }
+        None => println!("the desktop app (periwire-gui) is not installed next to this program, so there is no taskbar icon; install it to get one"),
+    }
     Ok(0)
 }
 
@@ -618,6 +635,7 @@ fn service_uninstall() -> Result<i32> {
     }
     let _ = sh("systemctl", &["disable", "--now", "periwire.service"]);
     let _ = std::fs::remove_file("/etc/systemd/system/periwire.service");
+    let _ = std::fs::remove_file(TRAY_AUTOSTART);
     let _ = sh("systemctl", &["daemon-reload"]);
     println!("removed periwire.service");
     Ok(0)

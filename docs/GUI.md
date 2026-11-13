@@ -50,6 +50,22 @@ cargo run --release -p periwire-gui            # development
 target/release/periwire-gui --hidden           # start minimised to the tray (autostart entries)
 ```
 
+**The taskbar icon follows the daemon.** The icon belongs to this app, so whenever a daemon starts (from a terminal, by `sudo`, from the
+MCP setup, by the app itself) it starts the app in tray-only mode (`--hidden --follow-daemon`): no window, just the icon, which leaves
+again when that daemon stops unless you opened the window. The app allows one instance, so nothing doubles. A daemon running as a
+system service has no desktop of its own: `sudo periwire service install` also adds an autostart entry (`/etc/xdg/autostart/periwire-tray.desktop`)
+that shows the icon at login. Turn it off with `periwire daemon --no-tray` or `PERIWIRE_NO_TRAY=1`. Closing the window hides it to the
+icon; the icon's menu has *Open* and *Quit the app* (the daemon keeps running). On a desktop without a tray the window simply closes the app.
+
+**Finding the app again.** Installing is enough; nobody has to run a command first:
+- Linux `.deb`: a launcher entry (*PeriWire*, searchable by "usb", "network", "ipad"…) and icons in all sizes go in the system menu.
+- Linux AppImage or unpacked tarball: the first time the app starts it adds the same entry and icon under `~/.local/share` (nothing
+  system-wide), pointing at the file it ran from; moving the file updates the entry on the next start, deleting it hides the entry.
+  It steps aside when a package or a system-wide entry provides one. `periwire-gui --register-launcher` does only this and exits;
+  `PERIWIRE_NO_LAUNCHER=1` turns it off.
+- Windows installer: a Start-menu shortcut (and, if ticked on the last page, a Desktop shortcut). macOS: drag *PeriWire* to Applications
+  from the disk image; it then shows in Launchpad.
+
 The app finds the daemon's socket automatically (`PERIWIRE_SOCKET` overrides). It looks for the `periwire` binary next to
 itself, then in `PATH`, when asked to start the daemon.
 
@@ -57,9 +73,9 @@ itself, then in `PATH`, when asked to start the daemon.
 
 Linux: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev`
 (Debian/Ubuntu names). macOS and Windows use the system webview and need nothing extra.
-Installers/bundles (`.deb`, `.AppImage`, `.dmg`, `.msi`) need the Tauri CLI: `cargo install tauri-cli --version "^2"`,
-then `cd gui/src-tauri && cargo tauri build`. Regenerate icons with `python3 tools/make-icons.py` (or
-`cargo tauri icon` from a source PNG).
+Installers/bundles (`.deb`, `.AppImage`, `.dmg`, Windows `-setup.exe`) need the Tauri CLI: `cargo install tauri-cli --version "^2"`,
+then `cd gui/src-tauri && cargo tauri build`. The icons are generated from the artwork in `images/` (the app icon as PNG and SVG, and the bare mark): edit that, then run
+`python3 tools/make-icons.py` (needs `playwright` and `pillow`). It writes every size, the `.ico`, the `.icns` and the three tray glyphs.
 
 ## Demo mode (no daemon, no devices)
 

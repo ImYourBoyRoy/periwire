@@ -334,6 +334,7 @@ pub async fn run(opts: crate::RunOpts) -> Result<()> {
     }
     let api = crate::api::serve(d.clone(), &opts).await?;
     d.start_auto();
+    crate::tray::ensure(opts.no_tray); // the taskbar icon belongs to the desktop app; see tray.rs
     let mut stop = d.stop.subscribe();
     tokio::select! {
         _ = export::wait_for_stop() => {}

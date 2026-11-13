@@ -1,16 +1,17 @@
 [Desktop Entry]
-{{#if categories}}
-Categories={{categories}}
-{{/if}}
+Type=Application
+Name=PeriWire
+GenericName=USB over the network
 {{#if comment}}
 Comment={{comment}}
 {{/if}}
+Keywords=usb;network;share;remote;device;usbip;virtualhere;ipad;
+Categories=Utility;
 Exec={{exec}}
 StartupWMClass={{exec}}
 Icon={{icon}}
-Name=PeriWire
 Terminal=false
-Type=Application
+StartupNotify=false
 {{#if mime_type}}
 MimeType={{mime_type}}
 {{/if}}

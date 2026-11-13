@@ -11,7 +11,7 @@ Developer helpers, not part of the product. Configure the lab in `lab.env` (copy
 - `mac-build.sh` — sync, test and build on a macOS machine over ssh (`PERIWIRE_GUEST_HOST` overrides the guest address).
 - `mac-e2e.sh`, `mac-oc-sip.sh` — end-to-end test on a throwaway SIP-relaxed Mac guest, and the OpenCore patch helper it uses.
 - `win-e2e.sh`, `win-soak.sh`, `win-daemon.ps1`, `winrun.py` — the same for the Windows lab VM (attach/detach cycles, trace flag).
-- `make-icons.py` — render the app and tray icons.
+- `make-icons.py` — generate every app and tray icon from the artwork in `images/` (sturdier variants for 16-64 px, macOS safe-area tile, tray glyphs with a halo).
 - `ui-churn.py` — measure (and with `--check` enforce) that the UI does not rebuild idle pages.
 - `screenshots.py` — regenerate the WebP screenshots in `docs/img/` from the UI's demo mode (see docs/DEVELOPMENT.md).
 
