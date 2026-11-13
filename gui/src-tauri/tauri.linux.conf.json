@@ -1,0 +1,21 @@
+{
+  "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/bin/periwire": "bin/periwire"
+        },
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "appimage": {
+        "files": {
+          "/usr/bin/periwire": "bin/periwire"
+        }
+      }
+    }
+  }
+}

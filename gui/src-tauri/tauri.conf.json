@@ -1,15 +1,17 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "periwire",
+  "productName": "PeriWire",
   "version": "0.1.0",
   "identifier": "com.glassprovidence.periwire",
-  "build": { "frontendDist": "../ui" },
+  "build": {
+    "frontendDist": "../ui"
+  },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "periwire",
+        "title": "PeriWire",
         "width": 1140,
         "height": 760,
         "minWidth": 900,
@@ -24,9 +26,26 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "deb",
+      "appimage",
+      "nsis",
+      "app",
+      "dmg"
+    ],
     "category": "Utility",
     "shortDescription": "Share USB devices over the network",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"]
-  }
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "longDescription": "PeriWire shares USB devices over the network and uses devices that are plugged into other computers, as if they were plugged in here. This app is its control panel and tray icon; the periwire daemon does the work.",
+    "copyright": "Copyright (c) 2026 periwire contributors",
+    "license": "MIT",
+    "licenseFile": "../../LICENSE"
+  },
+  "mainBinaryName": "periwire-gui"
 }

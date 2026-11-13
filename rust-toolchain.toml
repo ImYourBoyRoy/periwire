@@ -1,0 +1,5 @@
+# One pinned toolchain for developers and CI, so a new Rust release cannot turn the build red by itself. Bump it deliberately.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

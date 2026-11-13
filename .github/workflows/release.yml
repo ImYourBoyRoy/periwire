@@ -1,0 +1,160 @@
+name: Release
+
+# Builds every download for every platform. On a version tag (v*) it also drafts a GitHub release with the files attached;
+# run it by hand (Actions > Release > Run workflow) to get the same files as workflow artifacts without publishing anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bundle:
+    name: Bundle ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: "deb,appimage" }
+          - { name: macos-arm64, os: macos-latest, target: aarch64-apple-darwin, bundles: "app,dmg" }
+          - { name: macos-x86_64, os: macos-latest, target: x86_64-apple-darwin, bundles: "app,dmg" }
+          - { name: windows-x86_64, os: windows-latest, target: x86_64-pc-windows-msvc, bundles: "nsis" } # NSIS installer and a portable zip; deliberately no MSI
+    env:
+      EXE: ${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      NO_STRIP: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux libraries for the desktop app
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev pkg-config build-essential patchelf file desktop-file-utils
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          rustflags: ""
+
+      - name: Tauri CLI (cached)
+        id: tauri-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tauri${{ env.EXE }}
+          key: tauri-cli-2-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install the Tauri CLI
+        if: steps.tauri-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build the daemon and command-line tool
+        run: cargo build --release -p periwire --target ${{ matrix.target }}
+
+      - name: Put the daemon next to the app (every package carries both)
+        shell: bash
+        run: |
+          mkdir -p gui/src-tauri/bin
+          cp "target/${{ matrix.target }}/release/periwire${EXE}" "gui/src-tauri/bin/periwire${EXE}"
+
+      - name: Build the desktop app and its installers
+        shell: bash
+        working-directory: gui/src-tauri
+        run: cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      - name: Collect the downloads
+        shell: bash
+        run: |
+          set -euxo pipefail
+          B="target/${{ matrix.target }}/release"
+          mkdir -p dist
+          VERSION="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          N="periwire-${VERSION}-${{ matrix.name }}"
+          stage="stage/${N}"; mkdir -p "$stage"
+          cp "$B/periwire${EXE}" "$B/periwire-gui${EXE}" LICENSE THIRD-PARTY-NOTICES.md README.md "$stage/"
+          case "${{ runner.os }}" in
+            Linux)
+              cp "$B"/bundle/deb/*.deb dist/
+              cp "$B"/bundle/appimage/*.AppImage dist/
+              tar -C stage -czf "dist/${N}.tar.gz" "${N}"
+              ;;
+            macOS)
+              cp "$B"/bundle/dmg/*.dmg dist/
+              tar -C stage -czf "dist/${N}.tar.gz" "${N}"
+              ;;
+            Windows)
+              cp "$B"/bundle/nsis/*.exe dist/
+              (cd stage && 7z a -tzip "../dist/${N}.zip" "${N}")
+              ;;
+          esac
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum * > "SHA256SUMS-${{ matrix.name }}.txt"; else shasum -a 256 * > "SHA256SUMS-${{ matrix.name }}.txt"; fi
+          ls -la
+
+      - name: Check what is inside (the package must carry both programs)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd dist
+          case "${{ runner.os }}" in
+            Linux)
+              dpkg-deb -c *.deb | tee /dev/stderr | grep -E './usr/bin/periwire$'
+              dpkg-deb -c *.deb | grep -E './usr/bin/periwire-gui$'
+              dpkg-deb -I *.deb | grep -i -E 'Depends:.*libayatana-appindicator3-1'
+              chmod +x *.AppImage
+              ./*.AppImage --appimage-extract >/dev/null
+              test -x squashfs-root/usr/bin/periwire-gui && test -x squashfs-root/usr/bin/periwire
+              rm -rf squashfs-root
+              tar -xzf periwire-*-linux-x86_64.tar.gz -C /tmp && /tmp/periwire-*/periwire --version
+              ;;
+            macOS)
+              hdiutil attach -nobrowse -readonly -mountpoint /tmp/pwdmg *.dmg
+              ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | tee /dev/stderr | grep -x periwire
+              ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | grep -x periwire-gui
+              hdiutil detach /tmp/pwdmg
+              tar -xzf periwire-*.tar.gz -C /tmp && /tmp/periwire-*/periwire --version
+              ;;
+            Windows)
+              7z l periwire-*.zip | tee /dev/stderr | grep -E 'periwire\.exe'
+              7z l periwire-*.zip | grep -E 'periwire-gui\.exe'
+              ls *-setup.exe
+              7z x -y -o/tmp/pwzip periwire-*.zip >/dev/null && /tmp/pwzip/periwire-*/periwire.exe --version
+              ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    name: Draft the GitHub release
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: bundle-*
+          merge-multiple: true
+      - name: Combine the checksums
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
+          rm SHA256SUMS-*.txt
+          ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true # review the notes and the files, then publish it yourself
+          generate_release_notes: true
+          files: dist/*
