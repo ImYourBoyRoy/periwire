@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PeriWire",
+  "productName": "periwire",
   "version": "0.1.0",
   "identifier": "com.glassprovidence.periwire",
   "build": {
@@ -45,7 +45,8 @@
     "longDescription": "PeriWire shares USB devices over the network and uses devices that are plugged into other computers, as if they were plugged in here. This app is its control panel and tray icon; the periwire daemon does the work.",
     "copyright": "Copyright (c) 2026 periwire contributors",
     "license": "MIT",
-    "licenseFile": "../../LICENSE"
+    "licenseFile": "../../LICENSE",
+    "publisher": "ImYourBoyRoy"
   },
   "mainBinaryName": "periwire-gui"
 }

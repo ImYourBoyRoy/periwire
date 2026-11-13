@@ -7,5 +7,6 @@
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"
     }
-  }
+  },
+  "productName": "PeriWire"
 }
