@@ -2,6 +2,8 @@
 
 # PeriWire
 
+[![CI](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml/badge.svg)](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Plug a USB device into one computer, use it on another.** periwire forwards USB devices over your network so a
 flash drive, iPad, webcam, security key or dongle that is physically attached to *computer A* shows up on *computer B*
 as if it were plugged in there — natively, with its own drivers.
@@ -72,7 +74,16 @@ or follow the system), and it fits phones and narrow windows too. All images are
 
 ## Install
 
-Prebuilt binaries are not published yet; build from source (Rust 1.80+):
+Downloads are on the [releases page](https://github.com/ImYourBoyRoy/periwire/releases). Every package contains both programs: `periwire` (the command line, the
+daemon and the MCP server; one self-contained file) and `periwire-gui` (the desktop app with its tray icon).
+
+| Platform | Download | Notes |
+|---|---|---|
+| Linux (x86_64) | `.deb`, `.AppImage`, or the `.tar.gz` with both binaries | the `.deb` installs `periwire` and `periwire-gui` into `/usr/bin` |
+| macOS (Apple silicon and Intel) | `.dmg`, or the `.tar.gz` | not notarised yet: right-click > Open the first time. Importing devices needs Apple's USB host-controller entitlement or a Mac with SIP relaxed; sharing a device works everywhere ([macOS notes](docs/MACOS.md)) |
+| Windows (x86_64) | `-setup.exe` installer, or the portable `.zip` | the signed USB driver is inside `periwire.exe`; the app installs it with one click |
+
+Check a download against `SHA256SUMS.txt` on the release page. To build from source (Rust, see `rust-toolchain.toml`):
 
 ```bash
 cargo build --release                      # -> target/release/periwire   (CLI, daemon, MCP server)
@@ -80,7 +91,8 @@ cargo build --release -p periwire-gui        # -> target/release/periwire-gui (d
 ```
 
 Run the daemon as a service so it starts at boot: `sudo periwire service install` (Linux/systemd), or
-`periwire service print` for the launchd/systemd definition.
+`periwire service print` for the launchd/systemd definition. The tray icon belongs to the desktop app, so start `periwire-gui` (add it to your login items to
+have it always) to see it; the daemon alone has no icon.
 
 ## What it can do
 

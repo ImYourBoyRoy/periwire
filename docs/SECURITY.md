@@ -3,6 +3,13 @@
 periwire gives another computer full control of a USB device — a flash drive, a security key, a keyboard. Treat trust
 accordingly.
 
+
+## Reporting a vulnerability
+
+Please do not open a public issue for a security problem. Use GitHub's private reporting: on the repository open **Security > Report a vulnerability**
+(https://github.com/ImYourBoyRoy/periwire/security/advisories/new). Include what you did, what you expected and what happened, and the PeriWire version
+(`periwire --version`). You will get an answer as soon as I can give one; fixes for confirmed problems are released with credit unless you prefer otherwise.
+
 ## Authentication and encryption
 
 `periwire identity reset` replaces the certificate if you think it leaked; peers must then re-trust the new fingerprint.

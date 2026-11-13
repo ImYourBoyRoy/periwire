@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "resources": {
+      "bin/periwire.exe": "periwire.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

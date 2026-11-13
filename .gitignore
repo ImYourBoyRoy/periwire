@@ -17,3 +17,6 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+# Tauri build output (generated), and the daemon binary the packaging step copies in
+gui/src-tauri/gen/
+gui/src-tauri/bin/
