@@ -775,22 +775,49 @@ pub async fn bind(listen: &str) -> Result<TcpListener> {
     TcpListener::bind(listen).await.map_err(|e| anyhow!("cannot listen on {listen}: {e}"))
 }
 
+/// How long a connection may take to finish the TLS handshake, and how many may be in that state at once. Anyone who can reach the port can
+/// open connections without credentials; without these limits a peer that never finishes the handshake would hold a task and a file descriptor forever.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_HANDSHAKES: usize = 32;
+
+/// Run the TLS handshake, but give up after `limit`.
+async fn accept_tls<S: AsyncReadExt + AsyncWriteExt + Unpin>(acceptor: &tokio_rustls::TlsAcceptor, stream: S, limit: Duration) -> Result<tokio_rustls::server::TlsStream<S>> {
+    match tokio::time::timeout(limit, acceptor.accept(stream)).await {
+        Ok(r) => Ok(r?),
+        Err(_) => bail!("the TLS handshake did not finish within {} s", limit.as_secs_f32()),
+    }
+}
+
 /// Accept importers until `stop` fires; then let sessions wind down (their devices go back to this host).
 pub async fn serve(shared: Arc<Shared>, listener: TcpListener, mut stop: watch::Receiver<bool>) -> Result<()> {
     let active = Arc::new(AtomicUsize::new(0));
+    let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
     loop {
         let (tcp, peer) = tokio::select! {
             r = listener.accept() => r?,
             _ = stop.changed() => break,
         };
         let _ = tcp.set_nodelay(true);
-        let cfg = tls::server_config(&identity::load_or_create()?, identity::load_trusted()?)?; // re-read so an identity reset applies at once
+        // Too many connections still unauthenticated: drop this one at once rather than queue work for strangers.
+        let Ok(permit) = handshakes.clone().try_acquire_owned() else {
+            crate::logln!("[{peer}] dropped: {MAX_HANDSHAKES} connections are already in the middle of a handshake");
+            continue;
+        };
+        // Re-read identity and trust list so a reset or a new pairing applies at once; a read error loses this connection, not the exporter.
+        let cfg = match identity::load_or_create().and_then(|id| Ok((id, identity::load_trusted()?))).and_then(|(id, trusted)| tls::server_config(&id, trusted)) {
+            Ok(c) => c,
+            Err(e) => {
+                crate::logln!("[{peer}] dropped: could not load this computer's identity or trust list: {e:#}");
+                continue;
+            }
+        };
         let (sd, active, shared) = (stop.clone(), active.clone(), shared.clone());
         active.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(async move {
             let acceptor = tokio_rustls::TlsAcceptor::from(cfg);
-            match acceptor.accept(tcp).await {
+            match accept_tls(&acceptor, tcp, HANDSHAKE_TIMEOUT).await {
                 Ok(s) => {
+                    drop(permit); // authenticated: no longer counts against the handshake limit
                     if let Err(e) = handle(s, shared, peer.to_string(), sd).await {
                         crate::logln!("[{peer}] connection ended: {e:#}");
                     }
@@ -1484,6 +1511,21 @@ mod tests {
             assert!(!device_vanished(&e), "{e:?} must not end a session");
         }
         assert_eq!(map_err(rusb::Error::NoDevice), ENODEV);
+    }
+
+    #[tokio::test]
+    async fn a_peer_that_never_finishes_the_handshake_is_cut_off() {
+        let ck = rcgen::generate_simple_self_signed(vec!["periwire".to_string()]).unwrap();
+        let cert = ck.cert.der().to_vec();
+        let id = identity::Identity { fingerprint: identity::fingerprint(&cert), cert, key: ck.key_pair.serialize_der() };
+        let cfg = tls::server_config(&id, Default::default()).unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(cfg);
+        // the other end connects and then says nothing at all
+        let (server_end, _silent_client) = tokio::io::duplex(1024);
+        let t = std::time::Instant::now();
+        let r = accept_tls(&acceptor, server_end, Duration::from_millis(150)).await;
+        assert!(r.is_err(), "a handshake that never starts must fail");
+        assert!(t.elapsed() < Duration::from_secs(2), "and quickly: the limit is what stops a stalled peer holding a connection forever");
     }
 
     #[tokio::test]
