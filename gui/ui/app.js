@@ -84,7 +84,15 @@ function sync(parent, items, key, create, update) {
   existing.forEach((n) => { n.classList.add("leave"); setTimeout(() => n.remove(), 380); });
 }
 const setText = (e, t) => { if (e.textContent !== String(t)) e.textContent = t; };
-const setHTML = (e, t) => { if (e.innerHTML !== t) e.innerHTML = t; };
+// Compare with what was last written, not with `innerHTML`: the browser re-serialises markup (an SVG `<path/>` comes back as `<path></path>`),
+// so that comparison never matched and every update replaced the element's children (icons, buttons and chips were rebuilt every ~2 s).
+const setHTML = (e, t) => { if (e._h !== t) { e._h = t; e.innerHTML = t; } };
+// Key/value rows updated in place: the rows are rebuilt only when the list of labels changes, otherwise just the changed texts.
+function setKV(e, rows) {
+  const r = rows.filter((x) => x[1] !== "" && x[1] != null); const sig = r.map((x) => x[0]).join("\u0001");
+  if (e._sig !== sig) { e._sig = sig; e.innerHTML = r.map(([k]) => `<span>${esc(k)}</span><span class="sel"></span>`).join(""); }
+  r.forEach(([, v], i) => setText(e.children[i * 2 + 1], String(v)));
+}
 
 // animated numbers
 function tween(e, to, fmt = (v) => Math.round(v)) {
@@ -99,9 +107,13 @@ function spark(svg, data, color = "var(--accent)") {
   const pts = data.map((v, i) => [(i / (n - 1)) * w, hgt - 4 - (v / max) * (hgt - 10)]);
   const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
   const id = svg.dataset.g || (svg.dataset.g = "g" + Math.random().toString(36).slice(2, 7));
+  const key = d + "|" + color + "|" + pts.length; if (svg._k === key) return; svg._k = key; // unchanged data: leave the drawing alone
   svg.setAttribute("viewBox", `0 0 ${w} ${hgt}`); svg.setAttribute("preserveAspectRatio", "none");
+  // already drawn with a line: move the line instead of replacing the drawing (no flash)
+  const [area, line] = svg._p || []; if (pts.length > 1 && area && line && area.isConnected) { area.setAttribute("d", `${d} L${w},${hgt} L0,${hgt} Z`); line.setAttribute("d", d); return; }
   svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>` +
     (pts.length > 1 ? `<path d="${d} L${w},${hgt} L0,${hgt} Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/>` : "");
+  svg._p = pts.length > 1 ? svg.querySelectorAll("path") : null;
 }
 
 // ------------------------------------------------------------------ state
@@ -318,10 +330,11 @@ function go(id) {
   renderAll();
 }
 function renderActions() {
-  const a = $("#actions"); a.innerHTML = "";
-  a.append(h("span", { class: `chip mobile-only ${S.connected ? "ok live" : "bad"}`, html: `<i class="dot"></i>${S.connected ? "daemon running" : "daemon offline"}` }));
-  if (S.view === "health") a.append(h("button", { class: "btn", onclick: runDoctor, html: `${ic("refresh")} Run checks` }));
-  if (S.view === "share" && S.status) a.append(h("span", { class: `chip ${S.status.export.state === "listening" ? "ok live" : S.status.export.state === "error" ? "bad" : ""}`, html: `<i class="dot"></i>${S.status.export.state === "listening" ? "Listening " + esc(S.status.export.listen) : S.status.export.state === "error" ? "Exporter error" : "Exporter off"}` }));
+  const a = $("#actions"); const nodes = [];
+  nodes.push(h("span", { class: `chip mobile-only ${S.connected ? "ok live" : "bad"}`, html: `<i class="dot"></i>${S.connected ? "daemon running" : "daemon offline"}` }));
+  if (S.view === "health") nodes.push(h("button", { class: "btn", onclick: runDoctor, html: `${ic("refresh")} Run checks` }));
+  if (S.view === "share" && S.status) nodes.push(h("span", { class: `chip ${S.status.export.state === "listening" ? "ok live" : S.status.export.state === "error" ? "bad" : ""}`, html: `<i class="dot"></i>${S.status.export.state === "listening" ? "Listening " + esc(S.status.export.listen) : S.status.export.state === "error" ? "Exporter error" : "Exporter off"}` }));
+  const sig = nodes.map((n) => n.outerHTML).join(""); if (a._sig === sig) return; a._sig = sig; a.replaceChildren(...nodes); // not on every status update: that made the header flicker
 }
 
 // ------------------------------------------------------------------ rates
@@ -408,7 +421,7 @@ function updateConnItem(e, i) {
     rows.push(["Used by", s.peer_name ? `${s.peer_name} (${s.peer})` : s.peer], ["USB requests", String(s.urbs)]);
   }
   spark($(".spark", e), S.rates.get(k)?.h || [], "var(--accent)");
-  setHTML($(".kv", e), kvRows(rows));
+  setKV($(".kv", e), rows);
 }
 function drawTopo(st, peers, hosts) {
   const svg = $("#topo-svg"); const W = Math.max(300, Math.round($("#topo").clientWidth - 24)), narrow = W < 560;

@@ -49,6 +49,13 @@ The images in `docs/img/` (WebP) are generated from the app's demo mode, so they
 `python3 tools/screenshots.py` (needs `pip install playwright pillow` and a Chrome or Chromium; set `CHROME=/path` if it is not on `PATH`) and commit
 the result. `python3 tools/screenshots.py themes` regenerates only the images whose name contains "themes".
 
+## UI stability check
+
+The window gets a status update about every 2 seconds. The UI must update the numbers that changed and leave everything else alone: a rebuilt button
+cannot be clicked reliably, selected text disappears and icons flicker. `python3 tools/ui-churn.py` prints how many elements each page tears down and
+rebuilds while idle in demo mode, and `--check` fails if a page without live traffic rebuilds anything (it runs in CI). The tray follows the same rule:
+`gui/src-tauri/src/main.rs` re-applies the menu, icon and tooltip only when they would differ from what is shown (unit-tested).
+
 ## Conventions
 
 - Everything the UI can do must be reachable through the control API ([API](API.md)), the CLI, and an MCP tool.
