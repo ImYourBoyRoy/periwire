@@ -30,7 +30,7 @@ jobs:
       APPIMAGE_EXTRACT_AND_RUN: "1"
       NO_STRIP: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Linux libraries for the desktop app
         if: runner.os == 'Linux'
