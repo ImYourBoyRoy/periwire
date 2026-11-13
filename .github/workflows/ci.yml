@@ -59,7 +59,13 @@ jobs:
         run: cargo test --release -p usbip-proto -p periwire -p periwire-client
       - name: The desktop app still compiles (macOS, Windows)
         if: runner.os != 'Linux'
-        run: cargo build --release -p periwire-gui
+        shell: bash
+        run: |
+          # The app's packaging config names the daemon as a resource, so it must exist before the app is built.
+          cargo build --release -p periwire
+          mkdir -p gui/src-tauri/bin
+          if [ "$RUNNER_OS" = "Windows" ]; then cp target/release/periwire.exe gui/src-tauri/bin/; else cp target/release/periwire gui/src-tauri/bin/; fi
+          cargo build --release -p periwire-gui
 
   ui:
     name: UI stability
