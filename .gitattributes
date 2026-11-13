@@ -1,0 +1,14 @@
+# Keep every checkout byte-identical on every platform (Windows runners otherwise rewrite line endings).
+* text=auto eol=lf
+
+# Vendored, signed driver files: their hashes are verified, never touch them.
+crates/periwire/assets/** -text
+
+*.png binary
+*.webp binary
+*.icns binary
+*.ico binary
+*.sys binary
+*.cat binary
+*.dll binary
+*.exe binary
