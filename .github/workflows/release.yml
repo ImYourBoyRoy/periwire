@@ -61,6 +61,9 @@ jobs:
         run: |
           mkdir -p gui/src-tauri/bin
           cp "target/${{ matrix.target }}/release/periwire${EXE}" "gui/src-tauri/bin/periwire${EXE}"
+          # Tauri signs only the app's main program; the daemon inside the bundle must already carry a signature
+          # (ad-hoc here: this is not a notarised build), or the whole-app signature check rejects the bundle.
+          if [ "${{ runner.os }}" = "macOS" ]; then codesign --force --sign - "gui/src-tauri/bin/periwire"; fi
 
       - name: Build the desktop app and its installers
         shell: bash
@@ -103,7 +106,7 @@ jobs:
           cd dist
           case "${{ runner.os }}" in
             Linux)
-              dpkg-deb -c *.deb | tee /dev/stderr | grep -E ' (\./)?usr/bin/periwire$'
+              dpkg-deb -c *.deb | grep -E ' (\./)?usr/bin/periwire$'
               dpkg-deb -c *.deb | grep -E ' (\./)?usr/bin/periwire-gui$'
               dpkg-deb -I *.deb | grep -i -E 'Depends:.*libayatana-appindicator3-1'
               chmod +x *.AppImage
@@ -114,13 +117,13 @@ jobs:
               ;;
             macOS)
               hdiutil attach -nobrowse -readonly -mountpoint /tmp/pwdmg *.dmg
-              ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | tee /dev/stderr | grep -x periwire
+              ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | grep -x periwire
               ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | grep -x periwire-gui
               hdiutil detach /tmp/pwdmg
               tar -xzf periwire-*.tar.gz -C /tmp && /tmp/periwire-*/periwire --version
               ;;
             Windows)
-              7z l periwire-*.zip | tee /dev/stderr | grep -E 'periwire\.exe'
+              7z l periwire-*.zip | grep -E 'periwire\.exe'
               7z l periwire-*.zip | grep -E 'periwire-gui\.exe'
               ls *-setup.exe
               7z x -y -opwzip periwire-*.zip >/dev/null && ./pwzip/periwire-*/periwire.exe --version
