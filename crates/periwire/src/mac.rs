@@ -22,7 +22,7 @@ use objc2_io_usb_host::*;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::watch;
 
@@ -132,6 +132,11 @@ struct Ep {
     win: Window<InFlight, UrbResult>,
     setup: Option<[u8; 8]>,
     data_done: bool,
+    /// Write-behind: OUT transfers already completed to the kernel whose result from the exporter is still out (number -> length), their
+    /// total, and whether one of them failed (the next transfer then fails, as the device would have refused it).
+    early: HashMap<u32, u32>,
+    early_bytes: u64,
+    early_failed: bool,
 }
 
 struct Shared {
@@ -147,6 +152,11 @@ struct Shared {
     enumerated: AtomicBool,
     /// Bulk URBs kept in flight per endpoint (`PERIWIRE_PIPELINE`).
     depth: usize,
+    /// Write-behind limit in bytes per endpoint (`PERIWIRE_WRITE_BEHIND`), the configuration the kernel selected, and for each
+    /// configuration descriptor read so far the bulk OUT endpoints of its CDC-NCM (Ethernet over USB) data interfaces.
+    behind_cap: u64,
+    active_cfg: AtomicU8,
+    ncm: Mutex<HashMap<u8, Vec<u8>>>,
 }
 
 // SAFETY: see the module documentation; state machines are only used on `queue`.
@@ -279,7 +289,7 @@ impl Shared {
                 if Self::trace() {
                     eprintln!("[mac] endpoint {key:?} {desc:?}");
                 }
-                lock(&self.eps).insert(key, Ep { sm, desc, win: Window::default(), setup: None, data_done: false });
+                lock(&self.eps).insert(key, Ep { sm, desc, win: Window::default(), setup: None, data_done: false, early: HashMap::new(), early_bytes: 0, early_failed: false });
                 Ok(())
             }
             ty::ENDPOINT_DESTROY..=ty::ENDPOINT_SET_NEXT_TRANSFER => {
@@ -341,6 +351,17 @@ impl Shared {
         for seq in ep.win.flush() {
             self.client.unlink(seq);
         }
+        for (seq, _) in ep.early.drain() {
+            self.client.unlink(seq);
+        }
+        ep.early_bytes = 0;
+        ep.early_failed = false;
+    }
+
+    /// Is this a bulk OUT endpoint of an Ethernet-over-USB (CDC-NCM) link in the configuration the kernel selected?
+    fn is_ncm_out(&self, ep_addr: u8) -> bool {
+        let cfg = self.active_cfg.load(Ordering::Relaxed);
+        lock(&self.ncm).get(&cfg).is_some_and(|v| v.contains(&(ep_addr & 0x0f)))
     }
 
     fn cancel(&self, ep: &mut Ep) {
@@ -412,13 +433,30 @@ impl Shared {
                 },
                 Xfer::Data { len } => {
                     let is_in = key.1 & 0x80 != 0;
-                    let data = if is_in { vec![] } else { read_buffer(&msg, len) };
                     let interval = ep.desc.urb_interval(self.client.device.speed);
-                    self.submit(ep, key, ptr.as_ptr() as usize, Stage::Bulk, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, is_in);
-                    if ep.desc.kind == hci::Kind::Bulk {
-                        self.read_ahead(ep, key);
+                    if !is_in && len > 0 && ep.desc.kind == hci::Kind::Bulk && self.behind_cap > 0 && self.is_ncm_out(key.1) {
+                        // Write-behind. The driver of an Ethernet-over-USB link posts one transfer and waits for it before the next, so each
+                        // would cost a network round trip (about 30 KB per round trip). Frames are network traffic that the protocol above
+                        // (TCP) already protects, so complete the transfer to the kernel now, send the data on in order, and only hold the
+                        // driver back once `behind_cap` bytes are out unacknowledged. Never for storage: there a failed write must be reported.
+                        if ep.early_failed {
+                            ep.early_failed = false;
+                            complete(ep, ptr, Outcome::Error, 0)
+                        } else if ep.early_bytes == 0 || ep.early_bytes + u64::from(len) <= self.behind_cap {
+                            let data = read_buffer(&msg, len);
+                            self.submit_early(ep, key, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, len);
+                            complete(ep, ptr, Outcome::Success, len)
+                        } else {
+                            return; // the budget is used up: `finish` runs this again as results come back
+                        }
+                    } else {
+                        let data = if is_in { vec![] } else { read_buffer(&msg, len) };
+                        self.submit(ep, key, ptr.as_ptr() as usize, Stage::Bulk, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, is_in);
+                        if ep.desc.kind == hci::Kind::Bulk {
+                            self.read_ahead(ep, key);
+                        }
+                        return;
                     }
-                    return;
                 }
                 other => {
                     // Isochronous transfers are not supported yet; fail them so the driver can cope.
@@ -436,9 +474,28 @@ impl Shared {
         if Self::trace() {
             eprintln!("[mac] submit {key:?} {stage:?} len={} in flight={} setup={:02x?}", req.length, ep.win.len() + 1, req.setup);
         }
+        if stage != Stage::Bulk && req.setup[0] == 0x00 && req.setup[1] == 0x09 {
+            self.active_cfg.store(req.setup[2], Ordering::Relaxed); // SET_CONFIGURATION: which configuration's endpoints are live
+        }
         let len = req.length;
         let (seq, rx) = self.client.submit(req);
         ep.win.push(tag, seq, InFlight { stage, is_in, len });
+        let shared = Arc::clone(self);
+        self.runtime.spawn(async move {
+            let res = rx.await.unwrap_or(UrbResult { status: ENODEV, data: vec![], actual: 0 });
+            let shared2 = Arc::clone(&shared);
+            shared.queue.exec_async(move || shared2.finish(key, seq, res));
+        });
+    }
+
+    /// Sends an OUT transfer that has already been completed to the kernel (write-behind); its result only frees budget.
+    fn submit_early(self: &Arc<Self>, ep: &mut Ep, key: (u8, u8), req: SubmitRequest, len: u32) {
+        if Self::trace() {
+            eprintln!("[mac] submit {key:?} Early len={len} unacknowledged={}", ep.early_bytes + u64::from(len));
+        }
+        let (seq, rx) = self.client.submit(req);
+        ep.early.insert(seq, len);
+        ep.early_bytes += u64::from(len);
         let shared = Arc::clone(self);
         self.runtime.spawn(async move {
             let res = rx.await.unwrap_or(UrbResult { status: ENODEV, data: vec![], actual: 0 });
@@ -473,6 +530,16 @@ impl Shared {
         {
             let mut eps = lock(&self.eps);
             let Some(ep) = eps.get_mut(&key) else { return };
+            if let Some(len) = ep.early.remove(&seq) {
+                ep.early_bytes = ep.early_bytes.saturating_sub(u64::from(len));
+                if res.status < 0 {
+                    eprintln!("[mac] endpoint {key:?}: a write that was completed early failed ({}); the next transfer will fail", res.status);
+                    ep.early_failed = true;
+                }
+                drop(eps);
+                self.pump(key); // there may be room in the budget again
+                return;
+            }
             if !ep.win.finish(seq, res) {
                 return; // unlinked/paused/destroyed: nothing may touch the ring any more
             }
@@ -490,6 +557,14 @@ impl Shared {
                 }
                 let mut n = 0u32;
                 if outcome == Outcome::Success {
+                    if f.stage == Stage::ControlData && f.is_in {
+                        // GET_DESCRIPTOR(configuration): remember which endpoints belong to an Ethernet-over-USB link.
+                        if ep.setup.is_some_and(|s| s[0] == 0x80 && s[1] == 0x06 && s[3] == 0x02) {
+                            if let Some((cfg, outs)) = hci::ncm_out_endpoints(&res.data) {
+                                lock(&self.ncm).insert(cfg, outs);
+                            }
+                        }
+                    }
                     if f.is_in {
                         n = write_buffer(&msg, &res.data);
                     } else {
@@ -635,6 +710,9 @@ impl Controller {
             clock: FrameClock::new(),
             enumerated: AtomicBool::new(false),
             depth: hci::depth_from(std::env::var("PERIWIRE_PIPELINE").ok().as_deref()),
+            behind_cap: hci::behind_from(std::env::var("PERIWIRE_WRITE_BEHIND").ok().as_deref()),
+            active_cfg: AtomicU8::new(0),
+            ncm: Mutex::default(),
         });
         let cmd_shared = Arc::clone(&shared);
         let command_block = RcBlock::new(move |controller: NonNull<IOUSBHostControllerInterface>, command: IOUSBHostCIMessage| {

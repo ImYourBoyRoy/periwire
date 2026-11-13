@@ -47,12 +47,22 @@ exporter (any OS) ──mutual TLS──▶ urb.rs (USB/IP client) ──▶ mac
 
 - Isochronous transfers (cameras, audio) are failed cleanly; macOS's controller API does not handle them well either.
 - UAS drives are not downgraded to bulk-only yet (macOS does not fall back by itself); non-UAS drives and the iPad are unaffected.
-- **Bulk read-ahead (new, not yet measured on the iPad).** Until now one URB was in flight per endpoint, so every transfer cost a
-  network round trip (the iPad's USB network link moved about 0.5 MB/s that way). The importer now submits the transfers the driver
-  has already queued on a bulk endpoint without waiting for the previous one (up to 8 and 8 MiB per endpoint; `PERIWIRE_PIPELINE=1`
-  turns it off, a higher number deepens it, up to 32). Results still complete in ring order, and an error, pause or reset unlinks
-  what was read ahead. After a failed transfer the data already read ahead for an IN endpoint is dropped, as with any unlink. The
-  exporter runs each endpoint's transfers in the order they arrived, so queued transfers cannot overtake each other.
+- **Throughput over the network (measured 2026-11-12 on a real iPad Pro, 7 ms round trip).** The iPad's file transfers ride on its
+  Ethernet-over-USB (CDC-NCM) link. macOS's driver for it posts one 32 KB transfer, waits for it to complete and only then posts the next,
+  so with one URB per endpoint every 32 KB cost a network round trip: about 0.5-0.8 MB/s (a 200 MB app took 7+ minutes). Two things changed:
+  - *Read-ahead* (`PERIWIRE_PIPELINE`, default 8; 1 turns it off): the importer submits the bulk transfers the driver has already queued
+    without waiting for the previous one; results still complete in ring order and an error, pause or reset unlinks what was read ahead. It is
+    correct but gains little here (64 s to 51 s for 48 MB), because this driver never has more than one transfer queued (the trace shows
+    "in flight=1" on every endpoint). It helps drivers that do queue several.
+  - *Write-behind for network links* (`PERIWIRE_WRITE_BEHIND`, bytes, default 1 MiB; 0 turns it off): the importer learns which bulk OUT
+    endpoints belong to a CDC-NCM data interface (it parses the configuration descriptor the kernel reads and follows SET_CONFIGURATION),
+    completes each such transfer to the kernel at once, sends the data on in order, and holds the driver back only once 1 MiB is out
+    unacknowledged. Frames are network traffic that TCP above already protects, so completing early is safe there; it is never applied to
+    storage or any other class, where a failed write must be reported. If an early-completed write fails, the next transfer fails.
+    Result: 48 MB in 12 s (was 64 s) and **200 MB in 39 s (was 7+ minutes)**, and both files came back from the iPad byte-identical (SHA-256).
+  The exporter runs each data endpoint's transfers in the order they arrived, so queued transfers cannot overtake each other.
+- The other direction (iPad to Mac) is unchanged: a 200 MB copy back took 78 s (about 2.6 MB/s). Speeding it up would mean reading ahead
+  of the driver (prefetching IN data it has not asked for yet); not done.
 - Several devices at once work through the daemon (each attachment gets its own virtual controller): verified 2026-11-12 with the iPad and a read-only USB stick on one daemon, both healthy at the same time. The old one-device-per-`attach`-process limit applied only to the early standalone command.
 - **iPad re-enumeration (found and fixed 2026-11-12):** an iPad can drop off the USB bus and come back under a new device number, for instance right after macOS's vendor handshake (`40 40 80 03 8c 01`) when it is still in its first mode. The exporter used to keep the stale handle and fail every later transfer with -19, so the iPad never configured on the Mac. Now a libusb `NoDevice` ends the session as a clean disconnect (the importer detaches the device from macOS) and an importer attached with `--auto` re-attaches the device that came back, about 2 s later. Always attach the iPad with `--auto` (`tools/mac-e2e.sh attach` does). Verified: `devicectl` `available (paired)`, `ddiServicesAvailable: true`, `tunnelState: connected` on iPadOS 27.0.1 with Xcode 26.6, and again after a software unplug/replug (`echo 0 > /sys/bus/usb/devices/1-2/authorized; sleep 2; echo 1 > …`) in the middle of a session.
 

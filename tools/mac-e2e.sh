@@ -32,7 +32,7 @@ up() {
   run_sudo sh -c "pkill -TERM -x periwire; for i in \$(seq 1 30); do pgrep -x periwire >/dev/null || break; sleep 1; done; PERIWIRE_TRACE='${PERIWIRE_TRACE:-}' PERIWIRE_HOME='$STATE' nohup '$BIN' daemon --listen 0.0.0.0:$PORT --share '$SPEC' >'$STATE/daemon.log' 2>&1 &"
   sleep 1.5; lap status | head -8
   hr "mac daemon (user, no sudo)"
-  guest "pkill -TERM -x periwire; for i in \$(seq 1 30); do pgrep -x periwire >/dev/null || break; sleep 1; done; mkdir -p \$HOME/.periwire-test; export $GENV PERIWIRE_TRACE='${PERIWIRE_TRACE:-}'; nohup $GBIN daemon --no-export >\$HOME/.periwire-test/daemon.log 2>&1 &"
+  guest "pkill -TERM -x periwire; for i in \$(seq 1 30); do pgrep -x periwire >/dev/null || break; sleep 1; done; mkdir -p \$HOME/.periwire-test; export $GENV PERIWIRE_TRACE='${PERIWIRE_TRACE:-}' PERIWIRE_PIPELINE='${PERIWIRE_PIPELINE:-}'; nohup $GBIN daemon --no-export >\$HOME/.periwire-test/daemon.log 2>&1 &"
   sleep 2; mac status | head -6
   hr "pair"
   mac trust host "$LAPTOP_IP:$PORT" --yes

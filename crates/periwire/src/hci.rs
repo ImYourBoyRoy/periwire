@@ -104,6 +104,44 @@ pub fn depth_from(v: Option<&str>) -> usize {
     v.and_then(|v| v.trim().parse::<usize>().ok()).map(|n| n.clamp(1, MAX_DEPTH)).unwrap_or(DEFAULT_DEPTH)
 }
 
+/// Write-behind for network endpoints (`PERIWIRE_WRITE_BEHIND`, bytes; 0 turns it off): the most data the importer lets sit sent but not yet
+/// acknowledged by the device on one endpoint. See `Shared::pump` in `mac.rs`.
+pub const DEFAULT_BEHIND: u64 = 1024 * 1024;
+pub const MAX_BEHIND: u64 = 16 * 1024 * 1024;
+
+pub fn behind_from(v: Option<&str>) -> u64 {
+    v.and_then(|v| v.trim().parse::<u64>().ok()).map(|n| n.min(MAX_BEHIND)).unwrap_or(DEFAULT_BEHIND)
+}
+
+/// From a configuration descriptor: its configuration value and the numbers of the bulk OUT endpoints that belong to a CDC-NCM data
+/// interface (class 0x0A, protocol 1: an Ethernet-over-USB link such as the one an iPad offers). `None` if this is not a complete
+/// configuration descriptor.
+pub fn ncm_out_endpoints(cfg: &[u8]) -> Option<(u8, Vec<u8>)> {
+    if cfg.len() < 9 || cfg[0] < 9 || cfg[1] != 2 {
+        return None;
+    }
+    let total = usize::from(u16::from_le_bytes([cfg[2], cfg[3]]));
+    if cfg.len() < total {
+        return None; // only the first part was read so far
+    }
+    let (mut i, mut ncm, mut out) = (usize::from(cfg[0]), false, vec![]);
+    while i + 2 <= total && cfg[i] >= 2 {
+        let len = usize::from(cfg[i]);
+        match cfg[i + 1] {
+            4 if len >= 9 && i + 9 <= total => ncm = cfg[i + 5] == 0x0a && cfg[i + 7] == 1,
+            5 if len >= 7 && i + 7 <= total => {
+                let (addr, kind) = (cfg[i + 2], cfg[i + 3] & 3);
+                if ncm && addr & 0x80 == 0 && kind == 2 && !out.contains(&(addr & 0x0f)) {
+                    out.push(addr & 0x0f);
+                }
+            }
+            _ => {}
+        }
+        i += len;
+    }
+    Some((cfg[5], out))
+}
+
 /// Of the ring entries that follow the last one already submitted (`next`, in ring order), how many are plain data transfers that can
 /// be submitted now: they stop at the first entry that is not yet valid, is a link (the ring wraps or moves there), a setup/status
 /// stage or anything else, and at the depth and byte limits. `already` and `bytes` describe what is in flight.
@@ -385,6 +423,50 @@ mod tests {
         assert!(w.is_empty());
         assert!(!w.finish(10, 0), "a result for a flushed transfer is ignored");
         assert!(!w.finish(99, 0));
+    }
+
+    #[test]
+    fn finds_the_network_endpoints_of_an_ipad_configuration() {
+        // configuration 5 of an iPad: PTP, usbmux (vendor), NCM control, NCM data (alt 0 without endpoints, alt 1 with 7 IN / 5 OUT), a second NCM pair
+        let mut d = vec![9, 2, 0, 0, 8, 5, 0, 0xc0, 250];
+        let iface = |n: u8, alt: u8, ne: u8, class: u8, sub: u8, proto: u8| vec![9, 4, n, alt, ne, class, sub, proto, 0];
+        let ep = |addr: u8, attr: u8, mps: u16| vec![7, 5, addr, attr, (mps & 0xff) as u8, (mps >> 8) as u8, 0];
+        d.extend(iface(0, 0, 3, 6, 1, 1));
+        d.extend(ep(0x02, 2, 512));
+        d.extend(ep(0x81, 2, 512));
+        d.extend(iface(1, 0, 2, 255, 254, 2));
+        d.extend(ep(0x04, 2, 512));
+        d.extend(ep(0x85, 2, 512));
+        d.extend(iface(2, 0, 1, 2, 13, 0));
+        d.extend(ep(0x86, 3, 16));
+        d.extend(iface(3, 0, 0, 10, 0, 1));
+        d.extend(iface(3, 1, 2, 10, 0, 1));
+        d.extend(ep(0x87, 2, 512));
+        d.extend(ep(0x05, 2, 512));
+        d.extend(iface(5, 1, 2, 10, 0, 1));
+        d.extend(ep(0x88, 2, 512));
+        d.extend(ep(0x06, 2, 512));
+        let total = d.len() as u16;
+        d[2..4].copy_from_slice(&total.to_le_bytes());
+        assert_eq!(ncm_out_endpoints(&d), Some((5, vec![5, 6])), "only the OUT endpoints of the NCM data interfaces: not PTP's 2, not usbmux's 4");
+        assert_eq!(ncm_out_endpoints(&d[..40]), None, "a partial read is not parsed");
+        assert_eq!(ncm_out_endpoints(&[7, 5, 0x81, 2, 0, 2, 0, 0, 0]), None, "not a configuration descriptor");
+        // a serial modem's data interface (class 0x0A, protocol 0) must not count
+        let mut m = vec![9, 2, 0, 0, 1, 1, 0, 0x80, 50];
+        m.extend(iface(1, 0, 2, 10, 0, 0));
+        m.extend(ep(0x02, 2, 64));
+        let t = m.len() as u16;
+        m[2..4].copy_from_slice(&t.to_le_bytes());
+        assert_eq!(ncm_out_endpoints(&m), Some((1, vec![])));
+    }
+
+    #[test]
+    fn write_behind_setting() {
+        assert_eq!(behind_from(None), DEFAULT_BEHIND);
+        assert_eq!(behind_from(Some("0")), 0, "0 switches it off");
+        assert_eq!(behind_from(Some("262144")), 262144);
+        assert_eq!(behind_from(Some("999999999999")), MAX_BEHIND);
+        assert_eq!(behind_from(Some("x")), DEFAULT_BEHIND);
     }
 
     #[test]

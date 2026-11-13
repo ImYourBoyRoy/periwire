@@ -45,6 +45,7 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 | Unplug and re-enumeration | a device that vanishes ends the session cleanly and an `--auto` importer re-attaches the device that comes back in about 2-3 s (software unplug, port disable and a real cable replug; the iPad also re-enumerates by itself) |
 | GUI (browser/demo mode) | six themes, responsive layout, driver banner, read-only switches, help drawer, first-run guide |
 | MCP | compact tool list and replies; safety gates unchanged |
+| iPad throughput through the macOS importer | NCM write-behind and read-ahead (`mac.rs`): 200 MB to the iPad in 39 s over a 7 ms link (was 7+ min), hash-identical after a round trip; read-ahead alone about 1.25x; iPad to Mac 2.6 MB/s (unchanged) |
 | In-app help | the `help_matches_cli` test checks every command and flag in `gui/ui/help.js` against the real CLI |
 
 ## Not verified yet
@@ -53,12 +54,14 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
   against iPadOS 27 (Instruments in Xcode 26.6 does not support it; `devicectl` is fine), iPad sleep and wake.
 - The GUI "Read-only for others" switch against a real importer, and the GUI inside the real Tauri window (including the one-click driver install on Windows).
 - Isochronous devices (cameras, audio), UAS drives on macOS, internet relay, a macOS exporter.
+- Write-behind on other Ethernet-over-USB devices (only the iPad's NCM link was measured), and prefetching for the iPad-to-Mac direction.
 - The accelerator on writes and on a physical unplug mid-transfer (unit tests cover writes and failures; no hardware run), and a macOS speed measurement.
 - Production macOS use with SIP on: the importer needs Apple's host-controller entitlement (or SIP relaxed) until that is granted.
 - Performance over a wired LAN or Wi-Fi 6.
 
 ## Lessons from real hardware
 
+- **`devicectl device copy to ... --remove-existing-content true` empties the app's whole data container** (Documents, Library, tmp), not just the destination file. Never use it when timing transfers into an installed app; each such run reset the app's saves and preferences. Copy to a fresh path without the flag.
 - **Apple devices re-enumerate on a USB reset**, which invalidates the exporter's handle, and some also drop off the bus by themselves. The exporter resets only USB
   *mass storage*, treats libusb `NoDevice` as a clean disconnect, and the importer (`--auto`, always use it for iPhones and iPads) attaches the device that came back.
 - **An iPhone or iPad must be unlocked.** A locked one enumerates but refuses the configuration change macOS asks for (`SET_CONFIGURATION` fails with a protocol
