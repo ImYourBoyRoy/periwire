@@ -27,6 +27,21 @@ accordingly.
   daemon. The daemon runs as root on Linux (needed to attach devices); keep the socket group small.
 - The desktop app and MCP server make no network connections of their own.
 
+## Connections that have not authenticated
+
+Anyone who can reach the exporter's port can open a TCP connection without credentials, so the exporter limits what such a connection can cost: a TLS
+handshake must finish within **10 seconds**, and at most **32** connections may be in the middle of a handshake at once; further ones are dropped immediately
+(logged as "dropped"). A peer that does not present a pinned certificate never gets past the handshake (client certificates are mandatory). Verified live:
+40 silent connections at once left 8 refused immediately and the other 32 closed at the time limit. A failure to read this computer's identity or trust list
+while accepting costs that one connection, not the exporter.
+
+## Dependencies
+
+`cargo audit` reports **no known vulnerabilities**. It reports five advisories of the "unmaintained" or "unsound" kind (`glib` 0.18, `proc-macro-error`,
+`zbus_names`, `zvariant`, `zvariant_derive`); all of them are in the Linux desktop app's GTK 3 and D-Bus tray stack that Tauri pulls in, none in the daemon, CLI or
+protocol crates. The one soundness advisory (`glib::VariantStrIter`) concerns an iterator PeriWire never uses. They are tracked upstream and go away when Tauri
+moves its Linux tray to GTK 4 / `glib-appindicator`. CI runs `cargo audit` on every change and on a schedule.
+
 ## Data safety
 
 - periwire never reads, writes, formats or partitions a device on its own. It refuses to share a device that has a
