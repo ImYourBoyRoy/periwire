@@ -116,7 +116,8 @@ jobs:
               tar -xzf periwire-*-linux-x86_64.tar.gz -C /tmp && /tmp/periwire-*/periwire --version
               ;;
             macOS)
-              hdiutil attach -nobrowse -readonly -mountpoint /tmp/pwdmg *.dmg
+              # the disk image carries the licence as a click-through agreement: accept it, as a person would
+              echo Y | PAGER=cat hdiutil attach -nobrowse -readonly -mountpoint /tmp/pwdmg *.dmg >/dev/null
               ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | grep -x periwire
               ls /tmp/pwdmg/PeriWire.app/Contents/MacOS/ | grep -x periwire-gui
               hdiutil detach /tmp/pwdmg
