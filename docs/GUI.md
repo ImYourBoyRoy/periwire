@@ -31,6 +31,7 @@ is closed and the app can be restarted any time.
 - **Tray** — icon turns green while anything is connected and amber when the daemon is down; the menu lists imported
   devices with one-click *Eject*, shared devices in use with *Disconnect*, and *Start daemon* when it is not running.
   Closing the window hides it to the tray; *Quit* in the tray menu exits.
+- The tray icon belongs to this app, not to the daemon: start `periwire-gui` (closing its window hides it to the tray) to get the icon. The daemon alone has no icon.
 - If the daemon is not running the app offers *Start daemon* (and, on Linux, *Start with admin rights* via `pkexec`).
 - Keyboard: `1`–`6` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
 

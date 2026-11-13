@@ -12,6 +12,7 @@ Developer helpers, not part of the product. Configure the lab in `lab.env` (copy
 - `mac-e2e.sh`, `mac-oc-sip.sh` — end-to-end test on a throwaway SIP-relaxed Mac guest, and the OpenCore patch helper it uses.
 - `win-e2e.sh`, `win-soak.sh`, `win-daemon.ps1`, `winrun.py` — the same for the Windows lab VM (attach/detach cycles, trace flag).
 - `make-icons.py` — render the app and tray icons.
+- `ui-churn.py` — measure (and with `--check` enforce) that the UI does not rebuild idle pages.
 - `screenshots.py` — regenerate the WebP screenshots in `docs/img/` from the UI's demo mode (see docs/DEVELOPMENT.md).
 
 The hardware tests take the device to test with as `vid:pid` (argument, or `PERIWIRE_TEST_DEVICE`); there is no default, use a spare device. Nothing
