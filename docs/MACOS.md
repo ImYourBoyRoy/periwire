@@ -47,7 +47,12 @@ exporter (any OS) ──mutual TLS──▶ urb.rs (USB/IP client) ──▶ mac
 
 - Isochronous transfers (cameras, audio) are failed cleanly; macOS's controller API does not handle them well either.
 - UAS drives are not downgraded to bulk-only yet (macOS does not fall back by itself); non-UAS drives and the iPad are unaffected.
-- One URB in flight per endpoint (no read-ahead), so bulk throughput is round-trip-bound; read-ahead is the next speed-up.
+- **Bulk read-ahead (new, not yet measured on the iPad).** Until now one URB was in flight per endpoint, so every transfer cost a
+  network round trip (the iPad's USB network link moved about 0.5 MB/s that way). The importer now submits the transfers the driver
+  has already queued on a bulk endpoint without waiting for the previous one (up to 8 and 8 MiB per endpoint; `PERIWIRE_PIPELINE=1`
+  turns it off, a higher number deepens it, up to 32). Results still complete in ring order, and an error, pause or reset unlinks
+  what was read ahead. After a failed transfer the data already read ahead for an IN endpoint is dropped, as with any unlink. The
+  exporter runs each endpoint's transfers in the order they arrived, so queued transfers cannot overtake each other.
 - Several devices at once work through the daemon (each attachment gets its own virtual controller): verified 2026-11-12 with the iPad and a read-only USB stick on one daemon, both healthy at the same time. The old one-device-per-`attach`-process limit applied only to the early standalone command.
 - **iPad re-enumeration (found and fixed 2026-11-12):** an iPad can drop off the USB bus and come back under a new device number, for instance right after macOS's vendor handshake (`40 40 80 03 8c 01`) when it is still in its first mode. The exporter used to keep the stale handle and fail every later transfer with -19, so the iPad never configured on the Mac. Now a libusb `NoDevice` ends the session as a clean disconnect (the importer detaches the device from macOS) and an importer attached with `--auto` re-attaches the device that came back, about 2 s later. Always attach the iPad with `--auto` (`tools/mac-e2e.sh attach` does). Verified: `devicectl` `available (paired)`, `ddiServicesAvailable: true`, `tunnelState: connected` on iPadOS 27.0.1 with Xcode 26.6, and again after a software unplug/replug (`echo 0 > /sys/bus/usb/devices/1-2/authorized; sleep 2; echo 1 > …`) in the middle of a session.
 

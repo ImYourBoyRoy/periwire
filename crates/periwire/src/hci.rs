@@ -93,6 +93,99 @@ pub fn decode(m: &Msg) -> Option<Xfer> {
     })
 }
 
+/// How many bulk transfers the macOS importer keeps in flight per endpoint (`PERIWIRE_PIPELINE`, 1 turns read-ahead off), and how many
+/// bytes at most. A network round trip per transfer is what limits throughput otherwise; a real host controller also works through
+/// every transfer the driver has queued without waiting for the previous one to be acknowledged.
+pub const DEFAULT_DEPTH: usize = 8;
+pub const MAX_DEPTH: usize = 32;
+pub const MAX_WINDOW_BYTES: u64 = 8 * 1024 * 1024;
+
+pub fn depth_from(v: Option<&str>) -> usize {
+    v.and_then(|v| v.trim().parse::<usize>().ok()).map(|n| n.clamp(1, MAX_DEPTH)).unwrap_or(DEFAULT_DEPTH)
+}
+
+/// Of the ring entries that follow the last one already submitted (`next`, in ring order), how many are plain data transfers that can
+/// be submitted now: they stop at the first entry that is not yet valid, is a link (the ring wraps or moves there), a setup/status
+/// stage or anything else, and at the depth and byte limits. `already` and `bytes` describe what is in flight.
+pub fn run_ahead(next: impl Iterator<Item = Msg>, already: usize, bytes: u64, depth: usize) -> Vec<u32> {
+    let mut out = vec![];
+    let (mut n, mut b) = (already, bytes);
+    for m in next {
+        if n >= depth {
+            break;
+        }
+        match decode(&m) {
+            Some(Xfer::Data { len }) if b + u64::from(len) <= MAX_WINDOW_BYTES || n == 0 => {
+                out.push(len);
+                n += 1;
+                b += u64::from(len);
+            }
+            _ => break,
+        }
+    }
+    out
+}
+
+struct Slot<M, R> {
+    tag: usize,
+    seq: u32,
+    meta: M,
+    res: Option<R>,
+}
+
+/// The transfers submitted for one endpoint, oldest first. Results can arrive in any order but are handed out strictly in ring
+/// order, because the host controller interface completes the ring's messages one after another.
+pub struct Window<M, R> {
+    q: std::collections::VecDeque<Slot<M, R>>,
+}
+
+impl<M, R> Default for Window<M, R> {
+    fn default() -> Self {
+        Window { q: Default::default() }
+    }
+}
+
+impl<M, R> Window<M, R> {
+    pub fn len(&self) -> usize {
+        self.q.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.q.is_empty()
+    }
+    pub fn back_tag(&self) -> Option<usize> {
+        self.q.back().map(|s| s.tag)
+    }
+    pub fn metas(&self) -> impl Iterator<Item = &M> {
+        self.q.iter().map(|s| &s.meta)
+    }
+    pub fn push(&mut self, tag: usize, seq: u32, meta: M) {
+        self.q.push_back(Slot { tag, seq, meta, res: None });
+    }
+    /// Stores a result; false if no transfer with that number is waiting (it was unlinked meanwhile).
+    pub fn finish(&mut self, seq: u32, res: R) -> bool {
+        match self.q.iter_mut().find(|s| s.seq == seq && s.res.is_none()) {
+            Some(s) => {
+                s.res = Some(res);
+                true
+            }
+            None => false,
+        }
+    }
+    /// The oldest transfer, if its result is in.
+    pub fn pop_ready(&mut self) -> Option<(usize, M, R)> {
+        if self.q.front().is_some_and(|s| s.res.is_some()) {
+            let s = self.q.pop_front().unwrap();
+            Some((s.tag, s.meta, s.res.unwrap()))
+        } else {
+            None
+        }
+    }
+    /// Empties the window and returns the numbers of the transfers that had no result yet (to unlink them).
+    pub fn flush(&mut self) -> Vec<u32> {
+        self.q.drain(..).filter(|s| s.res.is_none()).map(|s| s.seq).collect()
+    }
+}
+
 /// Doorbell layout: device address in bits 0-7, endpoint address in bits 8-15.
 pub fn doorbell_target(d: u32) -> (u8, u8) {
     (d as u8, (d >> 8) as u8)
@@ -237,6 +330,61 @@ mod tests {
         assert_eq!(outcome_from_urb_status(-104), Outcome::Stopped);
         assert_eq!(outcome_from_urb_status(-75), Outcome::Overrun);
         assert_eq!(outcome_from_urb_status(-1234), Outcome::Error);
+    }
+
+    #[test]
+    fn read_ahead_stops_at_anything_but_plain_data() {
+        let d = |len| Msg { control: VALID | ty::NORMAL, data0: len, data1: 0x1000 };
+        let link = Msg { control: VALID | ty::LINK, data0: 0, data1: 0 };
+        let blank = Msg { control: ty::NORMAL, data0: 64, data1: 0 };
+        assert_eq!(run_ahead([d(512), d(512), link, d(512)].into_iter(), 0, 0, 8), vec![512, 512], "a link ends the run");
+        assert_eq!(run_ahead([d(1), blank, d(1)].into_iter(), 0, 0, 8), vec![1], "an entry the kernel has not finished writing ends it");
+        assert_eq!(run_ahead(std::iter::repeat_n(d(16), 20), 3, 0, 8).len(), 5, "depth counts what is already in flight");
+        assert_eq!(run_ahead(std::iter::repeat_n(d(16), 20), 8, 0, 8).len(), 0);
+        let big = 6 * 1024 * 1024;
+        assert_eq!(run_ahead([d(big), d(big)].into_iter(), 0, 0, 8), vec![big], "the byte limit holds back the second one");
+        assert_eq!(run_ahead([d(20 * 1024 * 1024)].into_iter(), 0, 0, 8).len(), 1, "a single large transfer is still allowed");
+        let setup = Msg { control: VALID | ty::SETUP, data0: 8, data1: 0 };
+        assert!(run_ahead([setup].into_iter(), 0, 0, 8).is_empty());
+    }
+
+    #[test]
+    fn depth_setting() {
+        assert_eq!(depth_from(None), DEFAULT_DEPTH);
+        assert_eq!(depth_from(Some("1")), 1);
+        assert_eq!(depth_from(Some(" 4 ")), 4);
+        assert_eq!(depth_from(Some("0")), 1, "never below one");
+        assert_eq!(depth_from(Some("1000")), MAX_DEPTH);
+        assert_eq!(depth_from(Some("lots")), DEFAULT_DEPTH);
+    }
+
+    #[test]
+    fn results_leave_the_window_in_ring_order() {
+        let mut w: Window<&str, u32> = Window::default();
+        w.push(0x100, 1, "a");
+        w.push(0x110, 2, "b");
+        w.push(0x120, 3, "c");
+        assert_eq!((w.back_tag(), w.len()), (Some(0x120), 3));
+        assert!(w.finish(3, 33) && w.finish(2, 22));
+        assert!(w.pop_ready().is_none(), "the oldest is still out: nothing may complete yet");
+        assert!(w.finish(1, 11));
+        assert_eq!(w.pop_ready(), Some((0x100, "a", 11)));
+        assert_eq!(w.pop_ready(), Some((0x110, "b", 22)));
+        assert_eq!(w.pop_ready(), Some((0x120, "c", 33)));
+        assert!(w.pop_ready().is_none() && w.is_empty());
+    }
+
+    #[test]
+    fn a_flush_names_only_the_transfers_still_out() {
+        let mut w: Window<(), u8> = Window::default();
+        w.push(1, 10, ());
+        w.push(2, 11, ());
+        w.push(3, 12, ());
+        w.finish(11, 0);
+        assert_eq!(w.flush(), vec![10, 12], "the one whose result is already here needs no unlink");
+        assert!(w.is_empty());
+        assert!(!w.finish(10, 0), "a result for a flushed transfer is ignored");
+        assert!(!w.finish(99, 0));
     }
 
     #[test]

@@ -1185,6 +1185,45 @@ fn journal_patches(dev: &Dev, busid: &str, peer: &str) -> Vec<Patch> {
     patches
 }
 
+/// One URB waiting to run.
+struct UrbJob {
+    c: CmdSubmit,
+    out: Vec<u8>,
+    cancel: Arc<AtomicBool>,
+}
+
+/// Runs the jobs of each key one after another, in the order they were given, on a worker thread per key; different keys run side by
+/// side. An importer that keeps several transfers in flight on one endpoint (the macOS one reads ahead) needs them to reach the
+/// device in the order it queued them: on separate threads the second could overtake the first and the data would arrive swapped.
+struct Ordered<K, J> {
+    queues: HashMap<K, UnboundedSender<J>>,
+    run: Arc<dyn Fn(J) + Send + Sync>,
+}
+
+impl<K: std::hash::Hash + Eq, J: Send + 'static> Ordered<K, J> {
+    fn new(run: Arc<dyn Fn(J) + Send + Sync>) -> Self {
+        Ordered { queues: HashMap::new(), run }
+    }
+
+    /// False if the worker is gone.
+    fn send(&mut self, key: K, job: J) -> bool {
+        let run = self.run.clone();
+        self.queues
+            .entry(key)
+            .or_insert_with(|| {
+                let (tx, mut rx) = unbounded_channel::<J>();
+                tokio::task::spawn_blocking(move || {
+                    while let Some(j) = rx.blocking_recv() {
+                        run(j);
+                    }
+                });
+                tx
+            })
+            .send(job)
+            .is_ok()
+    }
+}
+
 /// Runs a storage device's bulk transfers in submission order. A Bulk-Only command is strictly sequential anyway; doing it
 /// on one thread lets the last data transfer's reply carry the status block (see `accel`).
 fn bot_worker(
@@ -1343,6 +1382,32 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
         }
         _ => None,
     };
+    // Everything that is not a storage command runs here. Control transfers run at once and side by side; the transfers of a data
+    // endpoint run in the order they arrived (see `Ordered`).
+    let run: Arc<dyn Fn(UrbJob) + Send + Sync> = {
+        let (tx2, dev2, pend2, sess2, guard2) = (tx.clone(), dev.clone(), pending.clone(), sess.clone(), guard.clone());
+        Arc::new(move |UrbJob { c, out, cancel }| {
+            if cancel.load(Ordering::Relaxed) {
+                pend2.lock().unwrap().remove(&c.basic.seqnum); // unlinked while it waited its turn: never send it to the device
+                return;
+            }
+            let is_in = c.basic.direction == DIR_IN;
+            let (status, mut data) = run_urb(&dev2, &c, out, &cancel);
+            note_gone(&dev2, &sess2);
+            if let Some(g) = &guard2 {
+                g.lock().unwrap().on_complete(c.basic.ep as u8, is_in, &mut data);
+            }
+            let live = pend2.lock().unwrap().remove(&c.basic.seqnum).is_some();
+            trace!("done   seq={} status={} bytes={} live={}", c.basic.seqnum, status, data.len(), live);
+            if cancel.load(Ordering::Relaxed) || !live {
+                return;
+            }
+            sess2.tx.fetch_add(data.len() as u64, Ordering::Relaxed);
+            let m = make_ret(&c, status, &data);
+            send(&tx2, m);
+        })
+    };
+    let mut ordered: Ordered<(u8, bool), UrbJob> = Ordered::new(run.clone());
     let result: Result<()> = async {
         loop {
             let mut h = [0u8; URB_HEADER_LEN];
@@ -1445,23 +1510,13 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
                             continue;
                         }
                     }
-                    let (tx2, dev2, pend2, sess2, guard2) = (tx.clone(), dev.clone(), pending.clone(), sess.clone(), guard.clone());
-                    tokio::task::spawn_blocking(move || {
-                        let is_in = c.basic.direction == DIR_IN;
-                        let (status, mut data) = run_urb(&dev2, &c, out, &cancel);
-                        note_gone(&dev2, &sess2);
-                        if let Some(g) = &guard2 {
-                            g.lock().unwrap().on_complete(c.basic.ep as u8, is_in, &mut data);
-                        }
-                        let live = pend2.lock().unwrap().remove(&c.basic.seqnum).is_some();
-                        trace!("done   seq={} status={} bytes={} live={}", c.basic.seqnum, status, data.len(), live);
-                        if cancel.load(Ordering::Relaxed) || !live {
-                            return;
-                        }
-                        sess2.tx.fetch_add(data.len() as u64, Ordering::Relaxed);
-                        let m = make_ret(&c, status, &data);
-                        send(&tx2, m);
-                    });
+                    let job = UrbJob { c, out, cancel };
+                    if job.c.basic.ep == 0 {
+                        let run = run.clone();
+                        tokio::task::spawn_blocking(move || run(job));
+                    } else if !ordered.send((job.c.basic.ep as u8, job.c.basic.direction == DIR_IN), job) {
+                        bail!("endpoint worker stopped");
+                    }
                 }
                 USBIP_CMD_UNLINK => {
                     let u = CmdUnlink::decode(&h)?;
@@ -1486,7 +1541,8 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
         f.store(true, Ordering::Relaxed);
     }
     drop(bot_q); // ends the storage worker once it has drained
-                 // Wait for in-flight workers so the device is really free before we report it.
+    drop(ordered); // and the endpoint workers
+                   // Wait for in-flight workers so the device is really free before we report it.
     for _ in 0..100 {
         if Arc::strong_count(&dev) == 1 {
             break;
@@ -1511,6 +1567,38 @@ mod tests {
             assert!(!device_vanished(&e), "{e:?} must not end a session");
         }
         assert_eq!(map_err(rusb::Error::NoDevice), ENODEV);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn jobs_of_one_endpoint_run_in_order_and_different_endpoints_side_by_side() {
+        use std::sync::mpsc;
+        let (done_tx, done_rx) = mpsc::channel::<(u8, u32)>();
+        let done_tx = Mutex::new(done_tx);
+        // The first job of each endpoint is the slowest: without ordering the later ones would finish first.
+        let run: Arc<dyn Fn((u8, u32)) + Send + Sync> = Arc::new(move |(ep, n)| {
+            std::thread::sleep(Duration::from_millis(if n == 0 { 120 } else { 5 }));
+            done_tx.lock().unwrap().send((ep, n)).unwrap();
+        });
+        let mut o: Ordered<u8, (u8, u32)> = Ordered::new(run);
+        for n in 0..4 {
+            assert!(o.send(1, (1, n)));
+            assert!(o.send(2, (2, n)));
+        }
+        drop(o);
+        let mut got = vec![];
+        while let Ok(x) = done_rx.recv_timeout(Duration::from_secs(3)) {
+            got.push(x);
+            if got.len() == 8 {
+                break;
+            }
+        }
+        assert_eq!(got.len(), 8);
+        for ep in [1u8, 2] {
+            let seen: Vec<u32> = got.iter().filter(|x| x.0 == ep).map(|x| x.1).collect();
+            assert_eq!(seen, vec![0, 1, 2, 3], "endpoint {ep} must run its jobs in the order given");
+        }
+        let first_two: Vec<u8> = got.iter().take(2).map(|x| x.0).collect();
+        assert!(first_two.contains(&1) && first_two.contains(&2), "the two endpoints' slow first jobs overlap instead of queueing: {got:?}");
     }
 
     #[tokio::test]

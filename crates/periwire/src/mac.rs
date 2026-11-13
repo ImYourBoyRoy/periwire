@@ -12,7 +12,7 @@
 //! Requires either the `com.apple.developer.usb.host-controller-interface` entitlement (with a
 //! provisioning profile) or SIP disabled (see docs/MACOS.md).
 
-use crate::hci::{self, ty, Addresses, EpDesc, Msg, Outcome, Xfer};
+use crate::hci::{self, ty, Addresses, EpDesc, Msg, Outcome, Window, Xfer};
 use crate::urb::{SubmitRequest, UrbClient, UrbResult};
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, DispatchRetained};
@@ -116,19 +116,20 @@ enum Stage {
     Bulk,
 }
 
+/// What is known about a submitted URB besides its place in the endpoint's window (which records its number and the address of
+/// the ring message it was built from: a result for a message that is no longer the ring head, because the endpoint was paused,
+/// reset or moved, is dropped so that a reclaimed buffer is never written).
 struct InFlight {
-    seq: u32,
-    /// Address of the ring message this URB was built from; results for a message that is no
-    /// longer the ring head (paused, reset, moved) are dropped so a reclaimed buffer is never written.
-    head: usize,
     stage: Stage,
     is_in: bool,
+    len: u32,
 }
 
 struct Ep {
     sm: Retained<IOUSBHostCIEndpointStateMachine>,
     desc: EpDesc,
-    inflight: Option<InFlight>,
+    /// The URBs in flight for this endpoint, oldest first. Control endpoints have at most one; a bulk endpoint reads ahead along its ring.
+    win: Window<InFlight, UrbResult>,
     setup: Option<[u8; 8]>,
     data_done: bool,
 }
@@ -144,6 +145,8 @@ struct Shared {
     powered: watch::Sender<bool>,
     clock: FrameClock,
     enumerated: AtomicBool,
+    /// Bulk URBs kept in flight per endpoint (`PERIWIRE_PIPELINE`).
+    depth: usize,
 }
 
 // SAFETY: see the module documentation; state machines are only used on `queue`.
@@ -247,8 +250,8 @@ impl Shared {
                                 let mut eps = lock(&self.eps);
                                 let keys: Vec<_> = eps.keys().filter(|k| k.0 == addr).copied().collect();
                                 for k in keys {
-                                    if let Some(ep) = eps.remove(&k) {
-                                        self.cancel(&ep);
+                                    if let Some(mut ep) = eps.remove(&k) {
+                                        self.cancel(&mut ep);
                                     }
                                 }
                                 drop(eps);
@@ -276,7 +279,7 @@ impl Shared {
                 if Self::trace() {
                     eprintln!("[mac] endpoint {key:?} {desc:?}");
                 }
-                lock(&self.eps).insert(key, Ep { sm, desc, inflight: None, setup: None, data_done: false });
+                lock(&self.eps).insert(key, Ep { sm, desc, win: Window::default(), setup: None, data_done: false });
                 Ok(())
             }
             ty::ENDPOINT_DESTROY..=ty::ENDPOINT_SET_NEXT_TRANSFER => {
@@ -289,8 +292,8 @@ impl Shared {
                         let mut eps = lock(&self.eps);
                         match kind {
                             ty::ENDPOINT_DESTROY => {
-                                if let Some(ep) = eps.remove(&key) {
-                                    self.cancel(&ep);
+                                if let Some(mut ep) = eps.remove(&key) {
+                                    self.cancel(&mut ep);
                                 }
                             }
                             ty::ENDPOINT_PAUSE => {
@@ -303,8 +306,15 @@ impl Shared {
                                     ep.desc = endpoint_descriptor(&msg);
                                 }
                             }
+                            ty::ENDPOINT_SET_NEXT_TRANSFER => {
+                                // The ring position moved: what was read ahead no longer matches it.
+                                if let Some(ep) = eps.get_mut(&key) {
+                                    self.pause(ep);
+                                }
+                            }
                             ty::ENDPOINT_RESET => {
                                 if let Some(ep) = eps.get_mut(&key) {
+                                    self.pause(ep);
                                     ep.setup = None;
                                     ep.data_done = false;
                                     if key.1 & 0x7f != 0 {
@@ -326,17 +336,15 @@ impl Shared {
         }
     }
 
-    /// Unlink whatever is in flight for this endpoint (its result will be dropped).
+    /// Unlink whatever is in flight for this endpoint (its results will be dropped).
     fn pause(&self, ep: &mut Ep) {
-        if let Some(f) = ep.inflight.take() {
-            self.client.unlink(f.seq);
+        for seq in ep.win.flush() {
+            self.client.unlink(seq);
         }
     }
 
-    fn cancel(&self, ep: &Ep) {
-        if let Some(f) = &ep.inflight {
-            self.client.unlink(f.seq);
-        }
+    fn cancel(&self, ep: &mut Ep) {
+        self.pause(ep);
     }
 
     fn doorbell(self: &Arc<Self>, doorbell: u32) {
@@ -360,7 +368,14 @@ impl Shared {
         loop {
             let mut eps = lock(&self.eps);
             let Some(ep) = eps.get_mut(&key) else { return };
-            if ep.inflight.is_some() || unsafe { ep.sm.endpointState() } != IOUSBHostCIEndpointState::Active {
+            if unsafe { ep.sm.endpointState() } != IOUSBHostCIEndpointState::Active {
+                return;
+            }
+            if !ep.win.is_empty() {
+                // Waiting for results; a bulk endpoint meanwhile takes in whatever the driver has queued since.
+                if !control && ep.desc.kind == hci::Kind::Bulk {
+                    self.read_ahead(ep, key);
+                }
                 return;
             }
             let ptr = unsafe { ep.sm.currentTransferMessage() };
@@ -379,7 +394,7 @@ impl Shared {
                         let len = len.min(u16::from_le_bytes([s[6], s[7]]) as u32);
                         let is_in = s[0] & 0x80 != 0;
                         let data = if is_in { vec![] } else { read_buffer(&msg, len) };
-                        self.submit(ep, key, ptr, Stage::ControlData, SubmitRequest { ep: 0, setup: s, length: len, data, interval: 0 }, is_in);
+                        self.submit(ep, key, ptr.as_ptr() as usize, Stage::ControlData, SubmitRequest { ep: 0, setup: s, length: len, data, interval: 0 }, is_in);
                         return;
                     }
                     _ => complete(ep, ptr, Outcome::Error, 0),
@@ -387,7 +402,7 @@ impl Shared {
                 Xfer::Status if control => match ep.setup {
                     // No data stage happened: the status stage carries the whole request.
                     Some(s) if !ep.data_done => {
-                        self.submit(ep, key, ptr, Stage::ControlStatus, SubmitRequest { ep: 0, setup: s, length: 0, data: vec![], interval: 0 }, false);
+                        self.submit(ep, key, ptr.as_ptr() as usize, Stage::ControlStatus, SubmitRequest { ep: 0, setup: s, length: 0, data: vec![], interval: 0 }, false);
                         return;
                     }
                     _ => {
@@ -399,7 +414,10 @@ impl Shared {
                     let is_in = key.1 & 0x80 != 0;
                     let data = if is_in { vec![] } else { read_buffer(&msg, len) };
                     let interval = ep.desc.urb_interval(self.client.device.speed);
-                    self.submit(ep, key, ptr, Stage::Bulk, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, is_in);
+                    self.submit(ep, key, ptr.as_ptr() as usize, Stage::Bulk, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, is_in);
+                    if ep.desc.kind == hci::Kind::Bulk {
+                        self.read_ahead(ep, key);
+                    }
                     return;
                 }
                 other => {
@@ -414,12 +432,13 @@ impl Shared {
         }
     }
 
-    fn submit(self: &Arc<Self>, ep: &mut Ep, key: (u8, u8), ptr: NonNull<IOUSBHostCIMessage>, stage: Stage, req: SubmitRequest, is_in: bool) {
+    fn submit(self: &Arc<Self>, ep: &mut Ep, key: (u8, u8), tag: usize, stage: Stage, req: SubmitRequest, is_in: bool) {
         if Self::trace() {
-            eprintln!("[mac] submit {key:?} {stage:?} len={} setup={:02x?}", req.length, req.setup);
+            eprintln!("[mac] submit {key:?} {stage:?} len={} in flight={} setup={:02x?}", req.length, ep.win.len() + 1, req.setup);
         }
+        let len = req.length;
         let (seq, rx) = self.client.submit(req);
-        ep.inflight = Some(InFlight { seq, head: ptr.as_ptr() as usize, stage, is_in });
+        ep.win.push(tag, seq, InFlight { stage, is_in, len });
         let shared = Arc::clone(self);
         self.runtime.spawn(async move {
             let res = rx.await.unwrap_or(UrbResult { status: ENODEV, data: vec![], actual: 0 });
@@ -428,41 +447,71 @@ impl Shared {
         });
     }
 
+    /// Submits the transfers the driver has queued right behind the ones in flight, without waiting for those to come back: with
+    /// one URB at a time, throughput is one transfer per network round trip. Only plain data entries that follow in the same ring
+    /// segment are taken (a link, a not yet valid entry or a limit ends it); the results still complete in ring order.
+    fn read_ahead(self: &Arc<Self>, ep: &mut Ep, key: (u8, u8)) {
+        if self.depth <= 1 {
+            return;
+        }
+        let Some(last) = ep.win.back_tag() else { return };
+        let size = std::mem::size_of::<IOUSBHostCIMessage>();
+        let bytes: u64 = ep.win.metas().map(|f| u64::from(f.len)).sum();
+        // SAFETY: the ring is a run of messages that ends in a link entry, which stops the walk before the end of the memory.
+        let at = |i: usize| raw(unsafe { &*((last + i * size) as *const IOUSBHostCIMessage) });
+        let lens = hci::run_ahead((1..).map(at), ep.win.len(), bytes, self.depth);
+        let is_in = key.1 & 0x80 != 0;
+        let interval = ep.desc.urb_interval(self.client.device.speed);
+        for (i, len) in lens.into_iter().enumerate() {
+            let tag = last + (i + 1) * size;
+            let data = if is_in { vec![] } else { read_buffer(&at(i + 1), len) };
+            self.submit(ep, key, tag, Stage::Bulk, SubmitRequest { ep: key.1, setup: [0; 8], length: len, data, interval }, is_in);
+        }
+    }
+
     fn finish(self: &Arc<Self>, key: (u8, u8), seq: u32, res: UrbResult) {
         {
             let mut eps = lock(&self.eps);
             let Some(ep) = eps.get_mut(&key) else { return };
-            match &ep.inflight {
-                Some(f) if f.seq == seq => {}
-                _ => return, // unlinked/paused/destroyed: nothing may touch the ring any more
+            if !ep.win.finish(seq, res) {
+                return; // unlinked/paused/destroyed: nothing may touch the ring any more
             }
-            let f = ep.inflight.take().unwrap();
-            let ptr = unsafe { ep.sm.currentTransferMessage() };
-            if ptr.as_ptr() as usize != f.head || unsafe { ep.sm.endpointState() } != IOUSBHostCIEndpointState::Active {
-                return;
-            }
-            let msg = raw(unsafe { ptr.as_ref() });
-            let outcome = hci::outcome_from_urb_status(res.status);
-            if Self::trace() {
-                eprintln!("[mac] done {key:?} {:?} status={} bytes={}", f.stage, res.status, res.data.len());
-            }
-            let mut n = 0u32;
-            if outcome == Outcome::Success {
-                if f.is_in {
-                    n = write_buffer(&msg, &res.data);
-                } else {
-                    n = res.actual.min(msg.length());
+            // Hand results to the kernel strictly in ring order: a later URB may well be back before an earlier one.
+            while let Some((tag, f, res)) = ep.win.pop_ready() {
+                let ptr = unsafe { ep.sm.currentTransferMessage() };
+                if ptr.as_ptr() as usize != tag || unsafe { ep.sm.endpointState() } != IOUSBHostCIEndpointState::Active {
+                    self.pause(ep);
+                    return;
                 }
-                match f.stage {
-                    Stage::ControlData => ep.data_done = true,
-                    Stage::ControlStatus => ep.setup = None,
-                    Stage::Bulk => {}
+                let msg = raw(unsafe { ptr.as_ref() });
+                let outcome = hci::outcome_from_urb_status(res.status);
+                if Self::trace() {
+                    eprintln!("[mac] done {key:?} {:?} status={} bytes={} still in flight={}", f.stage, res.status, res.data.len(), ep.win.len());
                 }
-            } else if f.stage != Stage::Bulk {
-                ep.setup = None;
-            }
-            if !complete(ep, ptr, outcome, n) {
-                return;
+                let mut n = 0u32;
+                if outcome == Outcome::Success {
+                    if f.is_in {
+                        n = write_buffer(&msg, &res.data);
+                    } else {
+                        n = res.actual.min(msg.length());
+                    }
+                    match f.stage {
+                        Stage::ControlData => ep.data_done = true,
+                        Stage::ControlStatus => ep.setup = None,
+                        Stage::Bulk => {}
+                    }
+                } else if f.stage != Stage::Bulk {
+                    ep.setup = None;
+                }
+                if !complete(ep, ptr, outcome, n) {
+                    self.pause(ep);
+                    return;
+                }
+                if outcome != Outcome::Success {
+                    // The endpoint halts here: what was read ahead beyond the failed transfer is not delivered.
+                    self.pause(ep);
+                    break;
+                }
             }
         }
         self.pump(key);
@@ -585,6 +634,7 @@ impl Controller {
             powered: watch::channel(false).0,
             clock: FrameClock::new(),
             enumerated: AtomicBool::new(false),
+            depth: hci::depth_from(std::env::var("PERIWIRE_PIPELINE").ok().as_deref()),
         });
         let cmd_shared = Arc::clone(&shared);
         let command_block = RcBlock::new(move |controller: NonNull<IOUSBHostControllerInterface>, command: IOUSBHostCIMessage| {
