@@ -106,7 +106,10 @@ pub enum Step {
     /// The previous command block never reached the device: fail this transfer without touching it, so the host's
     /// reset recovery runs (it already believes the command block was delivered).
     Fail,
-    Cbw { data_len: u32, dir_in: bool },
+    Cbw {
+        data_len: u32,
+        dir_in: bool,
+    },
     /// The data stage of the current command.
     Data,
     Other,
@@ -190,7 +193,14 @@ impl Seq {
 
 /// A complete `RET_SUBMIT` for the host: `data` follows the header for IN transfers.
 pub fn ret_submit(seq: u32, status: i32, actual: usize, data: &[u8]) -> Vec<u8> {
-    let r = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, seqnum: seq, devid: 0, direction: 0, ep: 0 }, status, actual_length: actual as i32, start_frame: 0, number_of_packets: 0, error_count: 0 };
+    let r = RetSubmit {
+        basic: UrbBasic { command: USBIP_RET_SUBMIT, seqnum: seq, devid: 0, direction: 0, ep: 0 },
+        status,
+        actual_length: actual as i32,
+        start_frame: 0,
+        number_of_packets: 0,
+        error_count: 0,
+    };
     let mut m = r.encode();
     m.extend_from_slice(data);
     m
@@ -221,6 +231,7 @@ fn eof_ok(e: std::io::Error) -> Option<std::io::Error> {
 /// Relay URBs between the host's USB stack (`l*`) and the exporter (`r*`), with the round-trip savings applied when
 /// `accel` is on. With `handshake`, first pass the import request/reply through untouched (the Windows driver sends its own).
 /// `tx`/`rx` count bytes sent to / received from the exporter.
+#[allow(clippy::too_many_arguments)] // two stream halves per side plus the two options and the two byte counters: a struct would only rename them
 pub async fn relay<LR, LW, RR, RW>(mut lr: LR, mut lw: LW, mut rr: RR, mut rw: RW, accel: bool, handshake: bool, tx: &AtomicU64, rx: &AtomicU64) -> Ended
 where
     LR: AsyncRead + Unpin,
@@ -496,9 +507,8 @@ mod tests {
         let mut a = Accel::new(true);
         assert_eq!(a.submit(1, 2, false, 31, &cbw(), true), Submit::Forward);
         assert_eq!(a.submit(2, 2, false, 30, &cbw()[..30], false), Submit::Forward);
-        assert_eq!(a.submit(3, 2, false, 31, &vec![0u8; 31], false), Submit::Forward, "not a command block");
+        assert_eq!(a.submit(3, 2, false, 31, &[0u8; 31], false), Submit::Forward, "not a command block");
     }
-
 
     #[test]
     fn exporter_attaches_the_status_only_after_a_full_data_stage() {
@@ -597,7 +607,15 @@ mod tests {
         let (mut exp_r, mut exp_w) = tokio::io::split(exp);
 
         // host: command block (seq 1), data read (seq 2)
-        let cmd = |seq: u32, ep: u32, dir: u32, len: i32| CmdSubmit { basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: seq, devid: 1, direction: dir, ep }, transfer_flags: 0, transfer_buffer_length: len, start_frame: 0, number_of_packets: 0, interval: 0, setup: [0; 8] };
+        let cmd = |seq: u32, ep: u32, dir: u32, len: i32| CmdSubmit {
+            basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: seq, devid: 1, direction: dir, ep },
+            transfer_flags: 0,
+            transfer_buffer_length: len,
+            start_frame: 0,
+            number_of_packets: 0,
+            interval: 0,
+            setup: [0; 8],
+        };
         let mut m = cmd(1, 2, DIR_OUT, 31).encode();
         m.extend_from_slice(&cbw());
         host_w.write_all(&m).await.unwrap();

@@ -4,11 +4,7 @@ use std::path::Path;
 
 fn manifest() -> Vec<(String, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/usbip-win2");
-    std::fs::read_to_string(dir.join("SHA256SUMS.txt"))
-        .unwrap()
-        .lines()
-        .filter_map(|l| l.split_once("  ").map(|(h, n)| (n.trim().to_string(), h.trim().to_string())))
-        .collect()
+    std::fs::read_to_string(dir.join("SHA256SUMS.txt")).unwrap().lines().filter_map(|l| l.split_once("  ").map(|(h, n)| (n.trim().to_string(), h.trim().to_string()))).collect()
 }
 
 #[test]

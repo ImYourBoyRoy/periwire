@@ -4,16 +4,16 @@ use crate::guard::{Guard, Patch, Verdict};
 use crate::{identity, tls};
 use anyhow::{anyhow, bail, Result};
 use rusb::{Context, Device, DeviceHandle, TransferType, UsbContext};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::watch;
-use std::sync::atomic::{AtomicU64, AtomicUsize};
-use serde_json::{json, Value};
 use usbip_proto::*;
 
 static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -86,7 +86,15 @@ impl Session {
 
 impl Shared {
     pub fn new(specs: Vec<String>, ro_specs: Vec<String>, labels: std::collections::BTreeMap<String, String>) -> Arc<Self> {
-        Arc::new(Shared { specs: RwLock::new(specs), ro_specs: RwLock::new(ro_specs), sessions: Mutex::new(HashMap::new()), labels: RwLock::new(labels), cache: Mutex::new(HashMap::new()), next: AtomicU64::new(1), parked: Mutex::new(Default::default()) })
+        Arc::new(Shared {
+            specs: RwLock::new(specs),
+            ro_specs: RwLock::new(ro_specs),
+            sessions: Mutex::new(HashMap::new()),
+            labels: RwLock::new(labels),
+            cache: Mutex::new(HashMap::new()),
+            next: AtomicU64::new(1),
+            parked: Mutex::new(Default::default()),
+        })
     }
     pub fn specs(&self) -> Vec<String> {
         self.specs.read().unwrap().clone()
@@ -169,13 +177,9 @@ pub fn describe(dev: &Device<Context>) -> Result<(UsbDevice, Vec<UsbInterface>)>
     let d = dev.device_descriptor()?;
     let cfg = dev.active_config_descriptor().or_else(|_| dev.config_descriptor(0)).ok();
     let (cv, ifs): (u8, Vec<UsbInterface>) = match &cfg {
-        Some(c) => (
-            c.number(),
-            c.interfaces()
-                .filter_map(|i| i.descriptors().next())
-                .map(|a| UsbInterface { class: a.class_code(), subclass: a.sub_class_code(), protocol: a.protocol_code() })
-                .collect(),
-        ),
+        Some(c) => {
+            (c.number(), c.interfaces().filter_map(|i| i.descriptors().next()).map(|a| UsbInterface { class: a.class_code(), subclass: a.sub_class_code(), protocol: a.protocol_code() }).collect())
+        }
         None => (0, vec![]),
     };
     let id = busid(dev);
@@ -237,7 +241,11 @@ fn clean(s: Option<String>) -> Option<String> {
 fn read_strings(dev: &Device<Context>) -> Strings {
     let Ok(d) = dev.device_descriptor() else { return Strings::default() };
     if let Ok(h) = dev.open() {
-        return Strings { manufacturer: clean(h.read_manufacturer_string_ascii(&d).ok()), product: clean(h.read_product_string_ascii(&d).ok()), serial: clean(h.read_serial_number_string_ascii(&d).ok()) };
+        return Strings {
+            manufacturer: clean(h.read_manufacturer_string_ascii(&d).ok()),
+            product: clean(h.read_product_string_ascii(&d).ok()),
+            serial: clean(h.read_serial_number_string_ascii(&d).ok()),
+        };
     }
     #[cfg(target_os = "linux")]
     {
@@ -288,7 +296,13 @@ pub fn display_name(label: Option<&str>, st: &Strings, kind_label: &str) -> Stri
         (true, true) => kind_label.to_string(),
         (false, true) => format!("{m} {kind_label}"),
         (true, false) => p.to_string(),
-        (false, false) => if p.to_lowercase().contains(&m.to_lowercase()) { p.to_string() } else { format!("{m} {p}") },
+        (false, false) => {
+            if p.to_lowercase().contains(&m.to_lowercase()) {
+                p.to_string()
+            } else {
+                format!("{m} {p}")
+            }
+        }
     }
 }
 
@@ -339,14 +353,37 @@ pub fn shared_views(shared: &Shared) -> Result<Vec<Value>> {
 }
 
 pub fn speed_name(code: u32) -> &'static str {
-    match code { 1 => "low (1.5 Mb/s)", 2 => "full (12 Mb/s)", 3 => "high (480 Mb/s)", 5 => "super (5 Gb/s)", 6 => "super+ (10 Gb/s)", _ => "unknown" }
+    match code {
+        1 => "low (1.5 Mb/s)",
+        2 => "full (12 Mb/s)",
+        3 => "high (480 Mb/s)",
+        5 => "super (5 Gb/s)",
+        6 => "super+ (10 Gb/s)",
+        _ => "unknown",
+    }
 }
 
 pub fn class_name(c: u8) -> &'static str {
     match c {
-        0x01 => "audio", 0x02 => "communications", 0x03 => "hid", 0x05 => "physical", 0x06 => "imaging", 0x07 => "printer",
-        0x08 => "storage", 0x09 => "hub", 0x0a => "cdc-data", 0x0b => "smart-card", 0x0d => "security", 0x0e => "video",
-        0x0f => "healthcare", 0x10 => "av", 0xe0 => "wireless", 0xef => "misc", 0xfe => "application", 0xff => "vendor", _ => "other",
+        0x01 => "audio",
+        0x02 => "communications",
+        0x03 => "hid",
+        0x05 => "physical",
+        0x06 => "imaging",
+        0x07 => "printer",
+        0x08 => "storage",
+        0x09 => "hub",
+        0x0a => "cdc-data",
+        0x0b => "smart-card",
+        0x0d => "security",
+        0x0e => "video",
+        0x0f => "healthcare",
+        0x10 => "av",
+        0xe0 => "wireless",
+        0xef => "misc",
+        0xfe => "application",
+        0xff => "vendor",
+        _ => "other",
     }
 }
 
@@ -453,7 +490,17 @@ impl Dev {
         let storage = is_mass_storage(&dev);
         let h = dev.open()?;
         let _ = h.set_auto_detach_kernel_driver(true);
-        let mut me = Dev { h, dev, claimed: vec![], eps: HashMap::new(), config: 0, bot: None, dirty: std::sync::atomic::AtomicBool::new(false), gone: std::sync::atomic::AtomicBool::new(false), hinted: std::sync::atomic::AtomicBool::new(false) };
+        let mut me = Dev {
+            h,
+            dev,
+            claimed: vec![],
+            eps: HashMap::new(),
+            config: 0,
+            bot: None,
+            dirty: std::sync::atomic::AtomicBool::new(false),
+            gone: std::sync::atomic::AtomicBool::new(false),
+            hinted: std::sync::atomic::AtomicBool::new(false),
+        };
         if storage {
             // Reset first, then claim: this order is the one that works on real sticks. Claiming a stick that the kernel's
             // storage driver is still bound to, without a reset first, makes some of them stop answering within 100 ms.
@@ -609,14 +656,23 @@ fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &AtomicBool) 
                     return (0, vec![]);
                 }
                 g.release_all();
-                let r = g.h.set_active_configuration(val as u8).map_err(|e| { g.config_refused(val as u8, &e); g.err(e) });
+                let r = g.h.set_active_configuration(val as u8).map_err(|e| {
+                    g.config_refused(val as u8, &e);
+                    g.err(e)
+                });
                 return match r {
-                    Ok(()) => match g.claim_all() { Ok(()) => (0, vec![]), Err(_) => (EIO, vec![]) },
-                    Err(e) => { let _ = g.claim_all(); (e, vec![]) }
+                    Ok(()) => match g.claim_all() {
+                        Ok(()) => (0, vec![]),
+                        Err(_) => (EIO, vec![]),
+                    },
+                    Err(e) => {
+                        let _ = g.claim_all();
+                        (e, vec![])
+                    }
                 };
             }
             (0x01, 0x0b) => {
-                let g = dev.write().unwrap();
+                let g = dev.read().unwrap();
                 return match g.h.set_alternate_setting(idx as u8, val as u8) {
                     Ok(()) => (0, vec![]),
                     Err(e) => (g.err(e), vec![]),
@@ -624,12 +680,18 @@ fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &AtomicBool) 
             }
             // vhci's port-reset: a SET_FEATURE(PORT_RESET) aimed at the (virtual) hub port.
             (0x23, 0x03) if val == 4 => {
-                let g = dev.write().unwrap();
-                return match g.h.reset() { Ok(()) => (0, vec![]), Err(e) => (g.err(e), vec![]) };
+                let g = dev.read().unwrap();
+                return match g.h.reset() {
+                    Ok(()) => (0, vec![]),
+                    Err(e) => (g.err(e), vec![]),
+                };
             }
             (0x02, 0x01) if val == 0 => {
                 let g = dev.read().unwrap();
-                return match g.h.clear_halt(idx as u8) { Ok(()) => (0, vec![]), Err(e) => (g.err(e), vec![]) };
+                return match g.h.clear_halt(idx as u8) {
+                    Ok(()) => (0, vec![]),
+                    Err(e) => (g.err(e), vec![]),
+                };
             }
             _ => {}
         }
@@ -645,7 +707,10 @@ fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &AtomicBool) 
         return if rt & 0x80 != 0 {
             let mut buf = vec![0u8; len];
             match g.h.read_control(rt, req, val, idx, &mut buf, t) {
-                Ok(n) => { buf.truncate(n); (0, buf) }
+                Ok(n) => {
+                    buf.truncate(n);
+                    (0, buf)
+                }
                 Err(e) => (g.err(e), vec![]),
             }
         } else {
@@ -672,7 +737,10 @@ fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &AtomicBool) 
             let r = if ttype == TransferType::Interrupt { g.h.read_interrupt(addr, &mut buf, step) } else { g.h.read_bulk(addr, &mut buf, step) };
             drop(g);
             match r {
-                Ok(n) => { buf.truncate(n); return (0, buf); }
+                Ok(n) => {
+                    buf.truncate(n);
+                    return (0, buf);
+                }
                 Err(rusb::Error::Timeout) => continue,
                 Err(e) => return (dev.read().unwrap().err(e), vec![]), // `g` was dropped before the transfer result was looked at
             }
@@ -902,7 +970,14 @@ async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, shared: Arc<
                     Ok(())
                 }
                 Ok((dev, udev, read_only, patches, options, resumed)) => {
-                    crate::logln!("[{peer}] {} {} {:04x}:{:04x}{}", if resumed { "resumed" } else { "imported" }, udev.busid, udev.id_vendor, udev.id_product, if read_only { " (read-only)" } else { "" });
+                    crate::logln!(
+                        "[{peer}] {} {} {:04x}:{:04x}{}",
+                        if resumed { "resumed" } else { "imported" },
+                        udev.busid,
+                        udev.id_vendor,
+                        udev.id_product,
+                        if read_only { " (read-only)" } else { "" }
+                    );
                     if resumed {
                         crate::logln!("[{peer}] {} came back after {} s", udev.busid, held_at.elapsed().as_secs());
                     }
@@ -911,9 +986,24 @@ async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, shared: Arc<
                     send(&tx, rep);
                     let (kick_tx, kick_rx) = watch::channel(false);
                     let sess = Arc::new(Session {
-                        id: shared.next.fetch_add(1, Ordering::SeqCst), peer: peer.clone(), peer_name, busid: udev.busid.clone(),
-                        vid: udev.id_vendor, pid: udev.id_product, info: info_for(&shared, &udev.busid), since: crate::events::now(),
-                        urbs: AtomicU64::new(0), read_only, fp: peer_fp.clone(), resume, options, takeover: AtomicBool::new(false), gone: AtomicBool::new(false), rx: AtomicU64::new(0), tx: AtomicU64::new(0), kick: kick_tx,
+                        id: shared.next.fetch_add(1, Ordering::SeqCst),
+                        peer: peer.clone(),
+                        peer_name,
+                        busid: udev.busid.clone(),
+                        vid: udev.id_vendor,
+                        pid: udev.id_product,
+                        info: info_for(&shared, &udev.busid),
+                        since: crate::events::now(),
+                        urbs: AtomicU64::new(0),
+                        read_only,
+                        fp: peer_fp.clone(),
+                        resume,
+                        options,
+                        takeover: AtomicBool::new(false),
+                        gone: AtomicBool::new(false),
+                        rx: AtomicU64::new(0),
+                        tx: AtomicU64::new(0),
+                        kick: kick_tx,
                     });
                     shared.sessions.lock().unwrap().insert(sess.id, sess.clone());
                     crate::events::emit("session.opened", sess.view());
@@ -954,7 +1044,6 @@ async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, shared: Arc<
         c => bail!("unknown op code {c:#x}"),
     }
 }
-
 
 struct BotJob {
     c: CmdSubmit,
@@ -1071,7 +1160,15 @@ fn journal_patches(dev: &Dev, busid: &str, peer: &str) -> Vec<Patch> {
 
 /// Runs a storage device's bulk transfers in submission order. A Bulk-Only command is strictly sequential anyway; doing it
 /// on one thread lets the last data transfer's reply carry the status block (see `accel`).
-fn bot_worker(mut rx: tokio::sync::mpsc::UnboundedReceiver<BotJob>, bot: Bot, dev: Arc<RwLock<Dev>>, tx: UnboundedSender<Vec<u8>>, pending: Pending, sess: Arc<Session>, guard: Option<Arc<Mutex<Guard>>>) {
+fn bot_worker(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<BotJob>,
+    bot: Bot,
+    dev: Arc<RwLock<Dev>>,
+    tx: UnboundedSender<Vec<u8>>,
+    pending: Pending,
+    sess: Arc<Session>,
+    guard: Option<Arc<Mutex<Guard>>>,
+) {
     let mut seq = Seq::default();
     // The status block last sent along with a data reply. Some hosts (Windows) queue the status read right behind the data
     // read instead of waiting for it, so it can reach us after the device has nothing left to say: answer it from here.
@@ -1088,7 +1185,12 @@ fn bot_worker(mut rx: tokio::sync::mpsc::UnboundedReceiver<BotJob>, bot: Bot, de
         } else {
             seq.begin(is_in, ep, &out, bot.ep_in & 0x0f, bot.ep_out & 0x0f)
         };
-        let repeat = if is_in && ep == bot.ep_in & 0x0f && len >= CSW_LEN && step == Step::Other { delivered.take() } else { delivered = None; None };
+        let repeat = if is_in && ep == bot.ep_in & 0x0f && len >= CSW_LEN && step == Step::Other {
+            delivered.take()
+        } else {
+            delivered = None;
+            None
+        };
         if let Some(csw) = repeat {
             let live = pending.lock().unwrap().remove(&c.basic.seqnum).is_some();
             trace!("done   seq={} status=0 bytes={} live={} step=Status (answered from the block already sent)", c.basic.seqnum, CSW_LEN, live);
@@ -1104,7 +1206,13 @@ fn bot_worker(mut rx: tokio::sync::mpsc::UnboundedReceiver<BotJob>, bot: Bot, de
             g.lock().unwrap().on_complete(ep, is_in, &mut data);
         }
         let ok = if is_in { status == 0 } else { status >= 0 };
-        let moved = if !ok { 0 } else if is_in { data.len() } else { status as usize };
+        let moved = if !ok {
+            0
+        } else if is_in {
+            data.len()
+        } else {
+            status as usize
+        };
         let csw = if seq.finish(step, ok, moved, len) { read_csw(&dev, bot.ep_in, &cancel) } else { None };
         let live = pending.lock().unwrap().remove(&c.basic.seqnum).is_some();
         trace!("done   seq={} status={} bytes={} live={} step={:?} csw={}", c.basic.seqnum, status, data.len(), live, step, csw.is_some());
@@ -1132,7 +1240,14 @@ fn make_ret(c: &CmdSubmit, status: i32, data: &[u8]) -> Vec<u8> {
     } else {
         (status, 0)
     };
-    let ret = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, devid: 0, direction: 0, ep: 0, seqnum: c.basic.seqnum }, status: st, actual_length: actual, start_frame: 0, number_of_packets: 0, error_count: 0 };
+    let ret = RetSubmit {
+        basic: UrbBasic { command: USBIP_RET_SUBMIT, devid: 0, direction: 0, ep: 0, seqnum: c.basic.seqnum },
+        status: st,
+        actual_length: actual,
+        start_frame: 0,
+        number_of_packets: 0,
+        error_count: 0,
+    };
     let mut m = ret.encode();
     if (is_in || c.basic.ep == 0) && st == 0 && c.basic.direction == DIR_IN {
         m.extend_from_slice(data);
@@ -1166,7 +1281,17 @@ async fn read_header<R: AsyncReadExt + Unpin>(r: &mut R, h: &mut [u8; URB_HEADER
     }
 }
 
-async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8>>, dev: Arc<RwLock<Dev>>, mut shutdown: watch::Receiver<bool>, mut kick: watch::Receiver<bool>, sess: Arc<Session>, accel: bool, patches: Vec<Patch>) -> LoopEnd {
+#[allow(clippy::too_many_arguments)] // the session's handles (stream, writer queue, device, three watch channels, session, options): one call site
+async fn urb_loop<R: AsyncReadExt + Unpin>(
+    r: &mut R,
+    tx: UnboundedSender<Vec<u8>>,
+    dev: Arc<RwLock<Dev>>,
+    mut shutdown: watch::Receiver<bool>,
+    mut kick: watch::Receiver<bool>,
+    sess: Arc<Session>,
+    accel: bool,
+    patches: Vec<Patch>,
+) -> LoopEnd {
     use crate::resume::Cause;
     let mut cause = Cause::Failed; // until the loop says otherwise: errors with `?` below are protocol errors
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
@@ -1215,7 +1340,10 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8
             };
             match got {
                 Hdr::Got => {}
-                Hdr::Closed => { cause = Cause::Clean; return Ok(()) }
+                Hdr::Closed => {
+                    cause = Cause::Clean;
+                    return Ok(());
+                }
                 Hdr::Lost(e) => {
                     cause = Cause::Lost;
                     return if e.kind() == std::io::ErrorKind::UnexpectedEof { Ok(()) } else { Err(e.into()) };
@@ -1239,8 +1367,14 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8
                         // Isochronous transfers are not supported yet: drain descriptors, fail the URB.
                         let mut iso = vec![0u8; np as usize * 16];
                         r.read_exact(&mut iso).await?;
-                        let ret = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, devid: 0, direction: 0, ep: 0, ..c.basic },
-                            status: EPIPE, actual_length: 0, start_frame: 0, number_of_packets: np, error_count: np };
+                        let ret = RetSubmit {
+                            basic: UrbBasic { command: USBIP_RET_SUBMIT, devid: 0, direction: 0, ep: 0, ..c.basic },
+                            status: EPIPE,
+                            actual_length: 0,
+                            start_frame: 0,
+                            number_of_packets: np,
+                            error_count: np,
+                        };
                         let mut m = ret.encode();
                         m.extend_from_slice(&iso);
                         send(&tx, m);
@@ -1251,7 +1385,15 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8
                     trace!("submit seq={} ep={} dir={} len={} setup={:02x?}", basic.seqnum, c.basic.ep, c.basic.direction, len, c.setup);
                     if trace_on() && out.len() == 31 && out.starts_with(b"USBC") {
                         // Mass-storage command block wrapper: show what SCSI command the importer's OS is sending.
-                        trace!("   CBW tag={:08x} data_len={} flags={:02x} lun={} cdb_len={} cdb={:02x?}", u32::from_le_bytes([out[4], out[5], out[6], out[7]]), u32::from_le_bytes([out[8], out[9], out[10], out[11]]), out[12], out[13], out[14], &out[15..15 + (out[14] as usize).min(16)]);
+                        trace!(
+                            "   CBW tag={:08x} data_len={} flags={:02x} lun={} cdb_len={} cdb={:02x?}",
+                            u32::from_le_bytes([out[4], out[5], out[6], out[7]]),
+                            u32::from_le_bytes([out[8], out[9], out[10], out[11]]),
+                            out[12],
+                            out[13],
+                            out[14],
+                            &out[15..15 + (out[14] as usize).min(16)]
+                        );
                     }
                     if let Some(g) = &guard {
                         let verdict = g.lock().unwrap().on_submit(c.basic.ep as u8, c.basic.direction == DIR_IN, len as usize, &out);
@@ -1299,7 +1441,10 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8
                     trace!("unlink seq={} target={}", u.basic.seqnum, u.unlink_seqnum);
                     let found = pending.lock().unwrap().remove(&u.unlink_seqnum);
                     let status = match found {
-                        Some(flag) => { flag.store(true, Ordering::Relaxed); ECONNRESET }
+                        Some(flag) => {
+                            flag.store(true, Ordering::Relaxed);
+                            ECONNRESET
+                        }
                         None => 0,
                     };
                     send(&tx, encode_ret_unlink(u.basic, status));
@@ -1314,7 +1459,7 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(r: &mut R, tx: UnboundedSender<Vec<u8
         f.store(true, Ordering::Relaxed);
     }
     drop(bot_q); // ends the storage worker once it has drained
-    // Wait for in-flight workers so the device is really free before we report it.
+                 // Wait for in-flight workers so the device is really free before we report it.
     for _ in 0..100 {
         if Arc::strong_count(&dev) == 1 {
             break;

@@ -4,11 +4,11 @@ use crate::config::Connection;
 use crate::daemon::Daemon;
 use crate::{doctor, events, identity};
 use anyhow::{Context, Result};
+pub use periwire_client::ApiError;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-pub use periwire_client::ApiError;
 
 type R = Result<Value, ApiError>;
 
@@ -88,15 +88,16 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
             #[cfg(windows)]
             {
                 if !crate::windrv::is_admin() {
-                    return Err(ApiError::new("denied", "the PeriWire daemon is not running as Administrator, so it cannot install a driver: start it from an elevated prompt or install the service (`periwire service install`)"));
+                    return Err(ApiError::new(
+                        "denied",
+                        "the PeriWire daemon is not running as Administrator, so it cannot install a driver: start it from an elevated prompt or install the service (`periwire service install`)",
+                    ));
                 }
                 let install = method == "driver.install";
-                let r = tokio::task::spawn_blocking(move || {
-                    if install { crate::windrv::install().map(Some) } else { crate::windrv::uninstall().map(|_| None) }
-                })
-                .await
-                .map_err(|e| failed(e.into()))?
-                .map_err(|e| ApiError::new("failed", format!("{e:#}")))?;
+                let r = tokio::task::spawn_blocking(move || if install { crate::windrv::install().map(Some) } else { crate::windrv::uninstall().map(|_| None) })
+                    .await
+                    .map_err(|e| failed(e.into()))?
+                    .map_err(|e| ApiError::new("failed", format!("{e:#}")))?;
                 crate::logln!("{}", if install { "installed the Windows virtual USB host controller driver" } else { "removed the Windows virtual USB host controller driver" });
                 let st = tokio::task::spawn_blocking(crate::windrv::status).await.map_err(|e| failed(e.into()))?;
                 Ok(json!({"reboot": r.unwrap_or(false), "status": st}))
@@ -200,7 +201,13 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
             Ok(json!({"removed": fp}))
         }
         "connection.save" => {
-            let c = Connection { name: str_p(p, "name").unwrap_or("").into(), addr: norm_addr(req_str(p, "addr")?), busid: req_str(p, "busid")?.into(), auto: bool_p(p, "auto"), read_only: bool_p(p, "read_only") };
+            let c = Connection {
+                name: str_p(p, "name").unwrap_or("").into(),
+                addr: norm_addr(req_str(p, "addr")?),
+                busid: req_str(p, "busid")?.into(),
+                auto: bool_p(p, "auto"),
+                read_only: bool_p(p, "read_only"),
+            };
             d.save_connection(c.clone()).map_err(failed)?;
             Ok(json!(c))
         }

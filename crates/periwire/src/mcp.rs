@@ -20,7 +20,13 @@ fn tool(name: &str, desc: &str, props: Value, required: &[&str], ro: bool, destr
     if !required.is_empty() {
         schema["required"] = json!(required);
     }
-    let ann = if ro { json!({"readOnlyHint": true}) } else if destructive { json!({}) } else { json!({"destructiveHint": false}) };
+    let ann = if ro {
+        json!({"readOnlyHint": true})
+    } else if destructive {
+        json!({})
+    } else {
+        json!({"destructiveHint": false})
+    };
     let mut t = json!({"name": name, "description": desc, "inputSchema": schema});
     if ann.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
         t["annotations"] = ann;
@@ -72,14 +78,20 @@ fn set_if(o: &mut serde_json::Map<String, Value>, k: &str, cond: bool, v: Value)
 /// Remove nulls and empty containers (but keep false/0, which carry meaning).
 fn prune(v: Value) -> Value {
     match v {
-        Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (k, prune(v))).filter(|(_, v)| !(v.is_null() || matches!(v, Value::Array(a) if a.is_empty()) || matches!(v, Value::Object(o) if o.is_empty()))).collect()),
+        Value::Object(m) => Value::Object(
+            m.into_iter().map(|(k, v)| (k, prune(v))).filter(|(_, v)| !(v.is_null() || matches!(v, Value::Array(a) if a.is_empty()) || matches!(v, Value::Object(o) if o.is_empty()))).collect(),
+        ),
         Value::Array(a) => Value::Array(a.into_iter().map(prune).collect()),
         x => x,
     }
 }
 fn dev_name(d: &Value) -> String {
     let n = s_of(d, "display");
-    if n.is_empty() { format!("{}:{}", s_of(d, "vid"), s_of(d, "pid")) } else { n }
+    if n.is_empty() {
+        format!("{}:{}", s_of(d, "vid"), s_of(d, "pid"))
+    } else {
+        n
+    }
 }
 fn compact_device(d: &Value) -> Value {
     let mut o = serde_json::Map::new();
@@ -171,7 +183,11 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
             let checks = all.as_array().cloned().unwrap_or_default();
             let bad = |c: &Value| matches!(c["status"].as_str(), Some("warn") | Some("fail"));
             let n_bad = checks.iter().filter(|c| bad(c)).count();
-            let list: Vec<Value> = checks.iter().filter(|c| a.get("verbose").and_then(Value::as_bool) == Some(true) || bad(c)).map(|c| prune(json!({"id": c["id"], "status": c["status"], "detail": c["detail"], "fix": c["fix"]}))).collect();
+            let list: Vec<Value> = checks
+                .iter()
+                .filter(|c| a.get("verbose").and_then(Value::as_bool) == Some(true) || bad(c))
+                .map(|c| prune(json!({"id": c["id"], "status": c["status"], "detail": c["detail"], "fix": c["fix"]})))
+                .collect();
             Ok(json!({"ok": checks.len() - n_bad, "problems": n_bad, "checks": list}))
         }
         "periwire_list_devices" => {
@@ -188,7 +204,9 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
         }
         "periwire_share" => b.call("share.add", json!({"spec": g("spec"), "read_only": g("read_only")})).await.map_err(e2),
         "periwire_unshare" => b.call("share.remove", json!({"spec": g("spec")})).await.map_err(e2),
-        "periwire_attach" => Ok(prune(compact_attachment(&b.call("attach", json!({"addr": g("addr"), "busid": g("busid"), "auto": g("auto"), "name": g("name"), "read_only": g("read_only")})).await.map_err(e2)?))),
+        "periwire_attach" => {
+            Ok(prune(compact_attachment(&b.call("attach", json!({"addr": g("addr"), "busid": g("busid"), "auto": g("auto"), "name": g("name"), "read_only": g("read_only")})).await.map_err(e2)?)))
+        }
         "periwire_eject" => {
             let t = a.get("target").and_then(Value::as_str).unwrap_or("");
             let att = cli::resolve_attachment(&mut b, t).await.map_err(ea)?;
@@ -254,8 +272,11 @@ pub async fn serve() -> Result<()> {
             "initialize" => {
                 let want = req["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18");
                 let ver = if ["2025-06-18", "2025-03-26", "2024-11-05"].contains(&want) { want } else { "2025-06-18" };
-                reply(&id, json!({"protocolVersion": ver, "capabilities": {"tools": {"listChanged": false}},
-                    "serverInfo": {"name": "periwire", "title": "periwire USB forwarding", "version": crate::daemon::VERSION}, "instructions": INSTRUCTIONS}))
+                reply(
+                    &id,
+                    json!({"protocolVersion": ver, "capabilities": {"tools": {"listChanged": false}},
+                    "serverInfo": {"name": "periwire", "title": "periwire USB forwarding", "version": crate::daemon::VERSION}, "instructions": INSTRUCTIONS}),
+                )
             }
             "ping" => reply(&id, json!({})),
             "tools/list" => reply(&id, json!({"tools": tools()})),

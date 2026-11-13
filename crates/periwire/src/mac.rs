@@ -197,11 +197,7 @@ impl Shared {
             ty::CONTROLLER_FRAME_NUMBER => {
                 let sm = unsafe { controller.controllerStateMachine() };
                 let (frame, ts) = self.clock.next();
-                answer(
-                    || unsafe { sm.inspectCommand_error(ptr) },
-                    |s| unsafe { sm.respondToCommand_status_frame_timestamp_error(ptr, s, frame, ts) },
-                    || Ok(()),
-                )
+                answer(|| unsafe { sm.inspectCommand_error(ptr) }, |s| unsafe { sm.respondToCommand_status_frame_timestamp_error(ptr, s, frame, ts) }, || Ok(()))
             }
             ty::PORT_POWER_ON..=ty::PORT_STATUS => {
                 let port = unsafe { controller.getPortStateMachineForCommand_error(ptr) }.map_err(why)?;

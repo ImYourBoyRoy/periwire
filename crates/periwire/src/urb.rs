@@ -195,13 +195,7 @@ impl UrbClient {
             }
         }
         let cmd = CmdSubmit {
-            basic: UrbBasic {
-                command: USBIP_CMD_SUBMIT,
-                seqnum: seq,
-                devid: self.devid,
-                direction: if is_in { DIR_IN } else { DIR_OUT },
-                ep: (req.ep & 0x7f) as u32,
-            },
+            basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: seq, devid: self.devid, direction: if is_in { DIR_IN } else { DIR_OUT }, ep: (req.ep & 0x7f) as u32 },
             transfer_flags: 0,
             transfer_buffer_length: req.length as i32,
             start_frame: 0,
