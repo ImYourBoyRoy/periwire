@@ -59,7 +59,10 @@ pub fn journal_fix_wanted() -> bool {
 /// NTFS journal fix where it is wanted, and, for a connection that reconnects by itself (`resume`), to be waited for
 /// after a lost connection. Only ask for `resume` if this importer closes the connection cleanly when it detaches on purpose.
 pub fn session_flags(read_only: bool, resume: bool) -> u32 {
-    (if resume { FLAG_RESUME } else { 0 }) | (if read_only { FLAG_READ_ONLY } else { 0 }) | (if crate::accel::wanted() { FLAG_ACCEL } else { 0 }) | (if journal_fix_wanted() { FLAG_NTFS_JOURNAL } else { 0 })
+    (if resume { FLAG_RESUME } else { 0 })
+        | (if read_only { FLAG_READ_ONLY } else { 0 })
+        | (if crate::accel::wanted() { FLAG_ACCEL } else { 0 })
+        | (if journal_fix_wanted() { FLAG_NTFS_JOURNAL } else { 0 })
 }
 
 /// A readable reason for a refused import (`status` from `OP_REP_IMPORT`).

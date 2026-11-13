@@ -77,10 +77,18 @@ pub enum ProtoError {
 }
 
 fn need(buf: &[u8], n: usize) -> Result<(), ProtoError> {
-    if buf.len() < n { Err(ProtoError::Short { need: n, have: buf.len() }) } else { Ok(()) }
+    if buf.len() < n {
+        Err(ProtoError::Short { need: n, have: buf.len() })
+    } else {
+        Ok(())
+    }
 }
-fn be16(b: &[u8], o: usize) -> u16 { u16::from_be_bytes([b[o], b[o + 1]]) }
-fn be32(b: &[u8], o: usize) -> u32 { u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) }
+fn be16(b: &[u8], o: usize) -> u16 {
+    u16::from_be_bytes([b[o], b[o + 1]])
+}
+fn be32(b: &[u8], o: usize) -> u32 {
+    u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
+}
 fn cstr(b: &[u8]) -> String {
     let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
     String::from_utf8_lossy(&b[..end]).into_owned()
@@ -94,10 +102,16 @@ fn put_cstr(out: &mut Vec<u8>, s: &str, len: usize) {
 
 /// 8-byte header that starts every OP_* message.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct OpHeader { pub version: u16, pub code: u16, pub status: u32 }
+pub struct OpHeader {
+    pub version: u16,
+    pub code: u16,
+    pub status: u32,
+}
 
 impl OpHeader {
-    pub fn new(code: u16, status: u32) -> Self { Self { version: USBIP_VERSION, code, status } }
+    pub fn new(code: u16, status: u32) -> Self {
+        Self { version: USBIP_VERSION, code, status }
+    }
     pub fn encode(&self) -> [u8; 8] {
         let mut o = [0u8; 8];
         o[0..2].copy_from_slice(&self.version.to_be_bytes());
@@ -140,10 +154,7 @@ impl UsbDevice {
         out.extend_from_slice(&self.id_vendor.to_be_bytes());
         out.extend_from_slice(&self.id_product.to_be_bytes());
         out.extend_from_slice(&self.bcd_device.to_be_bytes());
-        out.extend_from_slice(&[
-            self.device_class, self.device_subclass, self.device_protocol,
-            self.configuration_value, self.num_configurations, self.num_interfaces,
-        ]);
+        out.extend_from_slice(&[self.device_class, self.device_subclass, self.device_protocol, self.configuration_value, self.num_configurations, self.num_interfaces]);
     }
     pub fn decode(b: &[u8]) -> Result<Self, ProtoError> {
         need(b, DEVICE_LEN)?;
@@ -168,14 +179,20 @@ impl UsbDevice {
 
 /// Interface triple listed after each device in OP_REP_DEVLIST (4 bytes, last is padding).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct UsbInterface { pub class: u8, pub subclass: u8, pub protocol: u8 }
+pub struct UsbInterface {
+    pub class: u8,
+    pub subclass: u8,
+    pub protocol: u8,
+}
 
 pub fn encode_devlist_reply(devs: &[(UsbDevice, Vec<UsbInterface>)]) -> Vec<u8> {
     let mut out = OpHeader::new(OP_REP_DEVLIST, 0).encode().to_vec();
     out.extend_from_slice(&(devs.len() as u32).to_be_bytes());
     for (d, ifs) in devs {
         d.encode(&mut out);
-        for i in ifs { out.extend_from_slice(&[i.class, i.subclass, i.protocol, 0]); }
+        for i in ifs {
+            out.extend_from_slice(&[i.class, i.subclass, i.protocol, 0]);
+        }
     }
     out
 }
@@ -197,7 +214,13 @@ pub const DIR_IN: u32 = 1;
 
 /// Fields common to all URB messages (20 bytes).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct UrbBasic { pub command: u32, pub seqnum: u32, pub devid: u32, pub direction: u32, pub ep: u32 }
+pub struct UrbBasic {
+    pub command: u32,
+    pub seqnum: u32,
+    pub devid: u32,
+    pub direction: u32,
+    pub ep: u32,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CmdSubmit {
@@ -221,12 +244,17 @@ pub struct RetSubmit {
 }
 
 fn put_basic(out: &mut Vec<u8>, b: &UrbBasic) {
-    for v in [b.command, b.seqnum, b.devid, b.direction, b.ep] { out.extend_from_slice(&v.to_be_bytes()); }
+    for v in [b.command, b.seqnum, b.devid, b.direction, b.ep] {
+        out.extend_from_slice(&v.to_be_bytes());
+    }
 }
 fn get_basic(b: &[u8]) -> UrbBasic {
     UrbBasic { command: be32(b, 0), seqnum: be32(b, 4), devid: be32(b, 8), direction: be32(b, 12), ep: be32(b, 16) }
 }
-pub fn peek_basic(b: &[u8]) -> Result<UrbBasic, ProtoError> { need(b, 20)?; Ok(get_basic(b)) }
+pub fn peek_basic(b: &[u8]) -> Result<UrbBasic, ProtoError> {
+    need(b, 20)?;
+    Ok(get_basic(b))
+}
 
 impl CmdSubmit {
     pub fn encode(&self) -> Vec<u8> {
@@ -243,7 +271,9 @@ impl CmdSubmit {
     pub fn decode(b: &[u8]) -> Result<Self, ProtoError> {
         need(b, URB_HEADER_LEN)?;
         let basic = get_basic(b);
-        if basic.command != USBIP_CMD_SUBMIT { return Err(ProtoError::Command(basic.command)); }
+        if basic.command != USBIP_CMD_SUBMIT {
+            return Err(ProtoError::Command(basic.command));
+        }
         let mut setup = [0u8; 8];
         setup.copy_from_slice(&b[40..48]);
         Ok(Self {
@@ -271,26 +301,26 @@ impl RetSubmit {
     pub fn decode(b: &[u8]) -> Result<Self, ProtoError> {
         need(b, URB_HEADER_LEN)?;
         let basic = get_basic(b);
-        if basic.command != USBIP_RET_SUBMIT { return Err(ProtoError::Command(basic.command)); }
-        Ok(Self {
-            basic,
-            status: be32(b, 20) as i32,
-            actual_length: be32(b, 24) as i32,
-            start_frame: be32(b, 28) as i32,
-            number_of_packets: be32(b, 32) as i32,
-            error_count: be32(b, 36) as i32,
-        })
+        if basic.command != USBIP_RET_SUBMIT {
+            return Err(ProtoError::Command(basic.command));
+        }
+        Ok(Self { basic, status: be32(b, 20) as i32, actual_length: be32(b, 24) as i32, start_frame: be32(b, 28) as i32, number_of_packets: be32(b, 32) as i32, error_count: be32(b, 36) as i32 })
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CmdUnlink { pub basic: UrbBasic, pub unlink_seqnum: u32 }
+pub struct CmdUnlink {
+    pub basic: UrbBasic,
+    pub unlink_seqnum: u32,
+}
 
 impl CmdUnlink {
     pub fn decode(b: &[u8]) -> Result<Self, ProtoError> {
         need(b, URB_HEADER_LEN)?;
         let basic = get_basic(b);
-        if basic.command != USBIP_CMD_UNLINK { return Err(ProtoError::Command(basic.command)); }
+        if basic.command != USBIP_CMD_UNLINK {
+            return Err(ProtoError::Command(basic.command));
+        }
         Ok(Self { basic, unlink_seqnum: be32(b, 20) })
     }
 }
@@ -308,9 +338,22 @@ mod tests {
     use super::*;
 
     fn sample() -> UsbDevice {
-        UsbDevice { path: "/sys/devices/pci0000:00/usb2/2-2".into(), busid: "2-2".into(), busnum: 2, devnum: 7,
-            speed: 5, id_vendor: 0x18a5, id_product: 0x0243, bcd_device: 0x0110, device_class: 0,
-            device_subclass: 0, device_protocol: 0, configuration_value: 1, num_configurations: 1, num_interfaces: 1 }
+        UsbDevice {
+            path: "/sys/devices/pci0000:00/usb2/2-2".into(),
+            busid: "2-2".into(),
+            busnum: 2,
+            devnum: 7,
+            speed: 5,
+            id_vendor: 0x18a5,
+            id_product: 0x0243,
+            bcd_device: 0x0110,
+            device_class: 0,
+            device_subclass: 0,
+            device_protocol: 0,
+            configuration_value: 1,
+            num_configurations: 1,
+            num_interfaces: 1,
+        }
     }
 
     #[test]
@@ -344,14 +387,19 @@ mod tests {
 
     #[test]
     fn urb_headers_are_48_bytes_and_roundtrip() {
-        let c = CmdSubmit { basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: 9, devid: 0x20007, direction: DIR_IN, ep: 1 },
-            transfer_flags: 0, transfer_buffer_length: 512, start_frame: 0, number_of_packets: -1, interval: 0,
-            setup: [0x80, 6, 0, 1, 0, 0, 0x12, 0] };
+        let c = CmdSubmit {
+            basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: 9, devid: 0x20007, direction: DIR_IN, ep: 1 },
+            transfer_flags: 0,
+            transfer_buffer_length: 512,
+            start_frame: 0,
+            number_of_packets: -1,
+            interval: 0,
+            setup: [0x80, 6, 0, 1, 0, 0, 0x12, 0],
+        };
         let e = c.encode();
         assert_eq!(e.len(), URB_HEADER_LEN);
         assert_eq!(CmdSubmit::decode(&e).unwrap(), c);
-        let r = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, ..c.basic }, status: 0, actual_length: 18,
-            start_frame: 0, number_of_packets: -1, error_count: 0 };
+        let r = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, ..c.basic }, status: 0, actual_length: 18, start_frame: 0, number_of_packets: -1, error_count: 0 };
         assert_eq!(r.encode().len(), URB_HEADER_LEN);
         assert_eq!(RetSubmit::decode(&r.encode()).unwrap(), r);
         assert_eq!(encode_ret_unlink(c.basic, -104).len(), URB_HEADER_LEN);
@@ -365,8 +413,9 @@ mod tests {
 
     #[test]
     fn status_marker_round_trips_and_ignores_plain_replies() {
-        let mut r = RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, seqnum: 7, devid: 0, direction: 0, ep: 0 },
-            status: 0, actual_length: 512, start_frame: 0, number_of_packets: -1, error_count: 0 }.encode();
+        let mut r =
+            RetSubmit { basic: UrbBasic { command: USBIP_RET_SUBMIT, seqnum: 7, devid: 0, direction: 0, ep: 0 }, status: 0, actual_length: 512, start_frame: 0, number_of_packets: -1, error_count: 0 }
+                .encode();
         assert_eq!(csw_mark_ep(&r), None, "an ordinary reply carries no marker");
         r[40..44].copy_from_slice(&csw_mark(0x81));
         assert_eq!(csw_mark_ep(&r), Some(1), "the endpoint number loses the direction bit");

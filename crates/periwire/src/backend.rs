@@ -2,9 +2,9 @@
 //! an in-process instance that answers from local state.
 use crate::api::{self, ApiError};
 use crate::daemon::Daemon;
+use periwire_client::{Client, ConnectError};
 use serde_json::Value;
 use std::sync::Arc;
-use periwire_client::{Client, ConnectError};
 
 pub enum Backend {
     Remote(Client),

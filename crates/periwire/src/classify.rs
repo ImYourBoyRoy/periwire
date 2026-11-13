@@ -10,9 +10,7 @@ const fn k(id: &'static str, label: &'static str) -> Kind {
 }
 
 /// Phone vendors whose USB ids are almost always Android devices.
-const ANDROID_VIDS: &[u16] = &[
-    0x18d1, 0x04e8, 0x22b8, 0x12d1, 0x2717, 0x0bb4, 0x1004, 0x0fce, 0x2a70, 0x05c6, 0x0489, 0x1bbb, 0x2916, 0x19d2, 0x0502, 0x1949, 0x2d95, 0x22d9, 0x2ae5,
-];
+const ANDROID_VIDS: &[u16] = &[0x18d1, 0x04e8, 0x22b8, 0x12d1, 0x2717, 0x0bb4, 0x1004, 0x0fce, 0x2a70, 0x05c6, 0x0489, 0x1bbb, 0x2916, 0x19d2, 0x0502, 0x1949, 0x2d95, 0x22d9, 0x2ae5];
 const KEY_VIDS: &[u16] = &[0x1050, 0x096e, 0x2581, 0x20a0, 0x1209];
 const SERIAL_VIDS: &[u16] = &[0x0403, 0x10c4, 0x067b, 0x1a86, 0x2341, 0x239a];
 
@@ -25,7 +23,13 @@ pub fn classify(vid: u16, pid: u16, dev_class: u8, ifaces: &[(u8, u8, u8)], prod
             0x1227 | 0x1222 => return k("apple-dfu", "Apple device in DFU mode"),
             0x1280..=0x1283 => return k("apple-recovery", "Apple device in Recovery mode"),
             0x1290..=0x12af => {
-                return if p.contains("ipad") { k("apple-ipad", "iPad") } else if p.contains("ipod") { k("apple-iphone", "iPod") } else { k("apple-iphone", "iPhone / iPad") };
+                return if p.contains("ipad") {
+                    k("apple-ipad", "iPad")
+                } else if p.contains("ipod") {
+                    k("apple-iphone", "iPod")
+                } else {
+                    k("apple-iphone", "iPhone / iPad")
+                };
             }
             _ => {}
         }

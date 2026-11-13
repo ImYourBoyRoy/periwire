@@ -3,13 +3,13 @@
 // tray icon in sync and relays daemon events to the window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use periwire_client::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
-use periwire_client::Client;
 
 const TRAY: &[u8] = include_bytes!("../icons/tray.png");
 const TRAY_ACTIVE: &[u8] = include_bytes!("../icons/tray-active.png");
@@ -83,17 +83,14 @@ enum Look {
 /// What the tray shows for a daemon state (`None` = the daemon is not running): the menu lines, which icon, and the tooltip.
 fn tray_view(st: Option<&Value>) -> (Vec<Item>, Look, String) {
     let mut items = Vec::new();
-    let look;
-    let tip;
-    match st {
+    let (look, tip) = match st {
         None => {
             items.push(Item::Header("periwire: daemon not running".into()));
             items.push(Item::Action("start".into(), "Start daemon".into()));
             if cfg!(target_os = "linux") {
                 items.push(Item::Action("start-root".into(), "Start daemon (can import devices)…".into()));
             }
-            look = Look::Warn;
-            tip = "periwire: daemon not running".to_string();
+            (Look::Warn, "periwire: daemon not running".to_string())
         }
         Some(st) => {
             let atts = st["attachments"].as_array().cloned().unwrap_or_default();
@@ -115,10 +112,16 @@ fn tray_view(st: Option<&Value>) -> (Vec<Item>, Look, String) {
                 items.push(Item::Action(format!("kick:{}", x["id"]), format!("Disconnect {} (used by {who})", s(x, "busid"))));
             }
             let problem = st["export"]["state"] == "error";
-            look = if problem { Look::Warn } else if atts.len() + sess.len() > 0 { Look::Active } else { Look::Idle };
-            tip = format!("periwire: {} imported, {} shared device(s) in use", atts.len(), sess.len());
+            let look = if problem {
+                Look::Warn
+            } else if atts.len() + sess.len() > 0 {
+                Look::Active
+            } else {
+                Look::Idle
+            };
+            (look, format!("periwire: {} imported, {} shared device(s) in use", atts.len(), sess.len()))
         }
-    }
+    };
     items.push(Item::Separator);
     items.push(Item::Action("open".into(), "Open periwire".into()));
     items.push(Item::Action("quit".into(), "Quit".into()));
@@ -231,7 +234,8 @@ async fn watch_daemon(app: AppHandle) {
                             if ev["event"] != "state" {
                                 let _ = app.emit("periwire-event", &ev);
                             }
-                            tokio::time::sleep(Duration::from_millis(120)).await; // coalesce bursts
+                            tokio::time::sleep(Duration::from_millis(120)).await;
+                            // coalesce bursts
                         }
                         Ok(None) => break,
                         Err(_) => {}
@@ -285,10 +289,13 @@ fn main() {
                                 let app = app.clone();
                                 tauri::async_runtime::spawn(async move {
                                     let r = api(method.into(), Some(params)).await;
-                                    let _ = app.emit("periwire-toast", match r {
-                                        Ok(_) => json!({"ok": true, "message": "Done"}),
-                                        Err(e) => json!({"ok": false, "message": e["message"]}),
-                                    });
+                                    let _ = app.emit(
+                                        "periwire-toast",
+                                        match r {
+                                            Ok(_) => json!({"ok": true, "message": "Done"}),
+                                            Err(e) => json!({"ok": false, "message": e["message"]}),
+                                        },
+                                    );
                                 });
                             }
                         }

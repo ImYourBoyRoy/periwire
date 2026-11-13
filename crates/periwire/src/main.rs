@@ -1,30 +1,30 @@
 mod accel;
-mod ntfs;
-mod resume;
 mod api;
 mod attach;
-mod classify;
 mod backend;
+mod classify;
 mod cli;
 mod config;
 mod daemon;
 mod doctor;
 mod events;
 mod export;
+mod guard;
 mod hci;
 mod identity;
 mod import;
 #[cfg(target_os = "macos")]
 mod mac;
 mod mcp;
+mod ntfs;
+mod resume;
 mod tls;
 mod ui;
 mod urb;
-mod guard;
-#[cfg(windows)]
-mod winusbip;
 #[cfg(windows)]
 mod windrv;
+#[cfg(windows)]
+mod winusbip;
 
 use anyhow::Result;
 use backend::Backend;
@@ -97,9 +97,7 @@ enum Cmd {
         read_only: bool,
     },
     /// Stop sharing devices. Anyone using one is disconnected and the device returns here.
-    Unshare {
-        specs: Vec<String>,
-    },
+    Unshare { specs: Vec<String> },
     /// List the devices a remote machine shares with you.
     #[command(alias = "list")]
     Remote {
@@ -135,10 +133,7 @@ enum Cmd {
     /// TARGET: session number or busid.
     Kick { target: String },
     /// Forget a remembered connection (see `status`).
-    Forget {
-        addr: String,
-        busid: String,
-    },
+    Forget { addr: String, busid: String },
     /// Manage which machines may connect.
     #[command(subcommand)]
     Trust(TrustCmd),
@@ -282,7 +277,9 @@ pub struct RunOpts {
 #[derive(Debug)]
 struct Exit(i32, String);
 impl std::fmt::Display for Exit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.1) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.1)
+    }
 }
 impl std::error::Error for Exit {}
 
@@ -303,7 +300,10 @@ async fn main() {
     let code = match run(cli).await {
         Ok(c) => c,
         Err(e) => {
-            let (code, msg) = match e.downcast_ref::<Exit>() { Some(x) => (x.0, x.1.clone()), None => (1, format!("{e:#}")) };
+            let (code, msg) = match e.downcast_ref::<Exit>() {
+                Some(x) => (x.0, x.1.clone()),
+                None => (1, format!("{e:#}")),
+            };
             if json_out {
                 println!("{}", json!({"error": {"message": msg}}));
             } else {
@@ -319,7 +319,10 @@ async fn run(cli: Cli) -> Result<i32> {
     let j = cli.json;
     match cli.cmd {
         Cmd::Daemon { listen, no_export, share, daemon_socket, socket_group, socket_mode } => {
-            let socket_mode = match socket_mode { Some(m) => Some(u32::from_str_radix(&m, 8).map_err(|_| anyhow::anyhow!("--socket-mode must be octal, like 660"))?), None => None };
+            let socket_mode = match socket_mode {
+                Some(m) => Some(u32::from_str_radix(&m, 8).map_err(|_| anyhow::anyhow!("--socket-mode must be octal, like 660"))?),
+                None => None,
+            };
             daemon::run(RunOpts { listen, no_export, share, socket: daemon_socket.or(cli.socket), socket_group, socket_mode }).await?;
             Ok(0)
         }
@@ -330,13 +333,24 @@ async fn run(cli: Cli) -> Result<i32> {
             for sp in &specs {
                 cli::simple(&mut b, j, "share.add", json!({"spec": sp, "read_only": read_only}), |_| format!("sharing {sp}{}", if read_only { "  (read-only for everyone)" } else { "" })).await?;
             }
-            if !b.has_daemon() && !j { eprintln!("{}", ui::yellow("the daemon is not running: this takes effect when it starts (`periwire daemon`)")); }
+            if !b.has_daemon() && !j {
+                eprintln!("{}", ui::yellow("the daemon is not running: this takes effect when it starts (`periwire daemon`)"));
+            }
             Ok(0)
         }
         Cmd::Unshare { specs } => {
             let mut b = open(false).await?;
             for sp in &specs {
-                cli::simple(&mut b, j, "share.remove", json!({"spec": sp}), |v| format!("stopped sharing {sp}{}", match v["disconnected"].as_u64() { Some(k) if k > 0 => format!(" ({k} peer(s) disconnected)"), _ => String::new() })).await?;
+                cli::simple(&mut b, j, "share.remove", json!({"spec": sp}), |v| {
+                    format!(
+                        "stopped sharing {sp}{}",
+                        match v["disconnected"].as_u64() {
+                            Some(k) if k > 0 => format!(" ({k} peer(s) disconnected)"),
+                            _ => String::new(),
+                        }
+                    )
+                })
+                .await?;
             }
             Ok(0)
         }
@@ -344,8 +358,17 @@ async fn run(cli: Cli) -> Result<i32> {
         Cmd::Attach { addr, busid, auto, name, read_only } => {
             let mut b = open(true).await?;
             cli::simple(&mut b, j, "attach", json!({"addr": addr, "busid": busid, "auto": auto, "name": name, "read_only": read_only}), |v| {
-                format!("{} {} {}:{} from {}{}", ui::green("attached"), v["busid"].as_str().unwrap_or(""), v["vid"].as_str().unwrap_or(""), v["pid"].as_str().unwrap_or(""), v["addr"].as_str().unwrap_or(""), if auto { "  (will re-attach automatically)" } else { "" })
-            }).await
+                format!(
+                    "{} {} {}:{} from {}{}",
+                    ui::green("attached"),
+                    v["busid"].as_str().unwrap_or(""),
+                    v["vid"].as_str().unwrap_or(""),
+                    v["pid"].as_str().unwrap_or(""),
+                    v["addr"].as_str().unwrap_or(""),
+                    if auto { "  (will re-attach automatically)" } else { "" }
+                )
+            })
+            .await
         }
         Cmd::Detach { target, force } => {
             let mut b = open(true).await?;
@@ -353,7 +376,8 @@ async fn run(cli: Cli) -> Result<i32> {
             cli::simple(&mut b, j, "detach", json!({"id": a["id"], "force": force}), |v| {
                 let um: Vec<&str> = v["unmounted"].as_array().map(|x| x.iter().filter_map(|m| m.as_str()).collect()).unwrap_or_default();
                 format!("{} {}{}", ui::green("ejected"), a["busid"].as_str().unwrap_or(""), if um.is_empty() { String::new() } else { format!("  (unmounted {})", um.join(", ")) })
-            }).await
+            })
+            .await
         }
         Cmd::Kick { target } => {
             let mut b = open(true).await?;
@@ -367,12 +391,19 @@ async fn run(cli: Cli) -> Result<i32> {
         Cmd::Trust(t) => {
             let mut b = open(false).await?;
             match t {
-                TrustCmd::List => cli::simple(&mut b, j, "trust.list", json!({}), |v| {
-                    let a = v.as_array().unwrap();
-                    if a.is_empty() { return "no trusted machines".into(); }
-                    a.iter().map(|t| format!("{}  {}", t["fingerprint"].as_str().unwrap_or(""), t["name"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n")
-                }).await,
-                TrustCmd::Add { fingerprint, name } => cli::simple(&mut b, j, "trust.add", json!({"fingerprint": fingerprint, "name": name}), |_| format!("{} {}", ui::green("trusted"), ui::short_fp(&fingerprint))).await,
+                TrustCmd::List => {
+                    cli::simple(&mut b, j, "trust.list", json!({}), |v| {
+                        let a = v.as_array().unwrap();
+                        if a.is_empty() {
+                            return "no trusted machines".into();
+                        }
+                        a.iter().map(|t| format!("{}  {}", t["fingerprint"].as_str().unwrap_or(""), t["name"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n")
+                    })
+                    .await
+                }
+                TrustCmd::Add { fingerprint, name } => {
+                    cli::simple(&mut b, j, "trust.add", json!({"fingerprint": fingerprint, "name": name}), |_| format!("{} {}", ui::green("trusted"), ui::short_fp(&fingerprint))).await
+                }
                 TrustCmd::Remove { fingerprint } => cli::simple(&mut b, j, "trust.remove", json!({"fingerprint": fingerprint}), |_| "removed".into()).await,
                 TrustCmd::Host { addr, yes } => cli::trust_host(&mut b, &addr, yes, j).await,
             }
@@ -386,41 +417,69 @@ async fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Label { device, name, clear } => {
             let mut b = open(false).await?;
-            if !clear && name.is_none() { anyhow::bail!("give a name, or --clear"); }
+            if !clear && name.is_none() {
+                anyhow::bail!("give a name, or --clear");
+            }
             let key = cli::device_key(&mut b, &device).await?;
             let label = if clear { String::new() } else { name.unwrap_or_default() };
             cli::simple(&mut b, j, "device.label", json!({"key": key, "label": label}), |_| if clear { "label cleared".into() } else { format!("{device} is now called {label}") }).await
         }
         Cmd::Identity(IdentityCmd::Reset { yes }) => {
-            if !yes && !j { anyhow::bail!("this gives the computer a new fingerprint and every peer will stop trusting it until they re-pair; re-run with --yes to do it"); }
-            cli::simple(&mut open(false).await?, j, "identity.reset", json!({"confirm": yes}), |v| format!("new fingerprint: {}\nTell every computer that trusted this one to run `periwire trust add` with it.", v["fingerprint"].as_str().unwrap_or(""))).await
+            if !yes && !j {
+                anyhow::bail!("this gives the computer a new fingerprint and every peer will stop trusting it until they re-pair; re-run with --yes to do it");
+            }
+            cli::simple(&mut open(false).await?, j, "identity.reset", json!({"confirm": yes}), |v| {
+                format!("new fingerprint: {}\nTell every computer that trusted this one to run `periwire trust add` with it.", v["fingerprint"].as_str().unwrap_or(""))
+            })
+            .await
         }
         Cmd::Id => cli::simple(&mut open(false).await?, j, "identity", json!({}), |v| v["fingerprint"].as_str().unwrap_or("").into()).await,
         Cmd::Doctor => cli::doctor(&mut open(false).await?, j).await,
         Cmd::Logs { lines, follow } => cli::logs(lines, follow).await,
         Cmd::Watch => cli::watch(j).await,
         Cmd::Stop => cli::simple(&mut open(true).await?, j, "shutdown", json!({}), |_| "daemon is stopping".into()).await,
-        Cmd::Mcp => { mcp::serve().await?; Ok(0) }
+        Cmd::Mcp => {
+            mcp::serve().await?;
+            Ok(0)
+        }
         Cmd::Api { method: Some(m), params } => {
-            let p: serde_json::Value = match params { Some(t) => serde_json::from_str(&t).map_err(|e| anyhow::anyhow!("params must be JSON: {e}"))?, None => json!({}) };
+            let p: serde_json::Value = match params {
+                Some(t) => serde_json::from_str(&t).map_err(|e| anyhow::anyhow!("params must be JSON: {e}"))?,
+                None => json!({}),
+            };
             let v = cli::call(&mut open(true).await?, &m, p).await?;
             cli::print_json(&v);
             Ok(0)
         }
         Cmd::Api { method: None, .. } => {
             let v = api::METHODS.iter().map(|(m, h)| json!({"method": m, "params": h})).collect::<Vec<_>>();
-            if j { cli::print_json(&json!(v)); } else { for (m, h) in api::METHODS { println!("{:<18} {h}", ui::bold(m)); } }
+            if j {
+                cli::print_json(&json!(v));
+            } else {
+                for (m, h) in api::METHODS {
+                    println!("{:<18} {h}", ui::bold(m));
+                }
+            }
             Ok(0)
         }
         Cmd::Service(sc) => match sc {
-            ServiceCmd::Print { user } => { print!("{}", cli::service_text(user)); Ok(0) }
+            ServiceCmd::Print { user } => {
+                print!("{}", cli::service_text(user));
+                Ok(0)
+            }
             ServiceCmd::Install => service_install(),
             ServiceCmd::Uninstall => service_uninstall(),
         },
         Cmd::Driver(dc) => driver_cmd(dc, j),
         Cmd::Completions { shell } => {
             use clap_complete::{generate, Shell};
-            let sh = match shell.as_str() { "bash" => Shell::Bash, "zsh" => Shell::Zsh, "fish" => Shell::Fish, "powershell" => Shell::PowerShell, _ => Shell::Elvish };
+            let sh = match shell.as_str() {
+                "bash" => Shell::Bash,
+                "zsh" => Shell::Zsh,
+                "fish" => Shell::Fish,
+                "powershell" => Shell::PowerShell,
+                _ => Shell::Elvish,
+            };
             generate(sh, &mut Cli::command(), "periwire", &mut std::io::stdout());
             Ok(0)
         }
@@ -458,7 +517,11 @@ fn driver_cmd(dc: DriverCmd, json: bool) -> Result<i32> {
             return;
         }
         println!("{} {}", ui::bold("Windows virtual USB host controller"), format!("(usbip-win2 {}, carried inside this program)", st.embedded_version));
-        let pk = if st.packages.is_empty() { "not installed".to_string() } else { st.packages.iter().map(|p| format!("{} ({}, {})", p.original.trim_end_matches(".inf"), p.published, p.version)).collect::<Vec<_>>().join(", ") };
+        let pk = if st.packages.is_empty() {
+            "not installed".to_string()
+        } else {
+            st.packages.iter().map(|p| format!("{} ({}, {})", p.original.trim_end_matches(".inf"), p.published, p.version)).collect::<Vec<_>>().join(", ")
+        };
         println!("  driver packages  {pk}");
         println!("  host controller  {}", st.device.clone().unwrap_or_else(|| "not present".into()));
         println!("  tools            {}", st.tools.clone().unwrap_or_else(|| "not extracted yet".into()));
@@ -478,7 +541,13 @@ fn driver_cmd(dc: DriverCmd, json: bool) -> Result<i32> {
                 let code = windrv::elevate_and_wait(&["driver", "install"])?;
                 let st = windrv::status();
                 print_status(&st);
-                return Ok(if st.ready { 0 } else if code != 0 { code } else { 1 });
+                return Ok(if st.ready {
+                    0
+                } else if code != 0 {
+                    code
+                } else {
+                    1
+                });
             }
             let reboot = windrv::install()?;
             print_status(&windrv::status());
@@ -508,7 +577,9 @@ fn driver_cmd(dc: DriverCmd, json: bool) -> Result<i32> {
 
 fn sh(cmd: &str, args: &[&str]) -> Result<()> {
     let st = std::process::Command::new(cmd).args(args).status()?;
-    if !st.success() { anyhow::bail!("`{cmd} {}` failed", args.join(" ")); }
+    if !st.success() {
+        anyhow::bail!("`{cmd} {}` failed", args.join(" "));
+    }
     Ok(())
 }
 
@@ -521,8 +592,12 @@ fn service_install() -> Result<i32> {
         println!("installed the PeriWire task (runs at logon with highest privileges) and started it");
         return Ok(0);
     }
-    if !cfg!(target_os = "linux") { anyhow::bail!("automatic install is Linux-only for now; use `periwire service print` and install it yourself"); }
-    if !daemon::is_root() { anyhow::bail!("run with sudo"); }
+    if !cfg!(target_os = "linux") {
+        anyhow::bail!("automatic install is Linux-only for now; use `periwire service print` and install it yourself");
+    }
+    if !daemon::is_root() {
+        anyhow::bail!("run with sudo");
+    }
     std::fs::write("/etc/systemd/system/periwire.service", cli::service_text(false))?;
     let _ = sh("groupadd", &["-f", "periwire"]);
     sh("systemctl", &["daemon-reload"])?;
@@ -538,7 +613,9 @@ fn service_uninstall() -> Result<i32> {
         println!("removed the PeriWire task");
         return Ok(0);
     }
-    if !daemon::is_root() { anyhow::bail!("run with sudo"); }
+    if !daemon::is_root() {
+        anyhow::bail!("run with sudo");
+    }
     let _ = sh("systemctl", &["disable", "--now", "periwire.service"]);
     let _ = std::fs::remove_file("/etc/systemd/system/periwire.service");
     let _ = sh("systemctl", &["daemon-reload"]);

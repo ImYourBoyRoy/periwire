@@ -73,12 +73,7 @@ pub fn load_trusted() -> Result<HashSet<String>> {
     if !p.exists() {
         return Ok(HashSet::new());
     }
-    Ok(fs::read_to_string(p)?
-        .lines()
-        .filter_map(|l| l.split_whitespace().next())
-        .filter(|f| !f.starts_with('#'))
-        .map(str::to_string)
-        .collect())
+    Ok(fs::read_to_string(p)?.lines().filter_map(|l| l.split_whitespace().next()).filter(|f| !f.starts_with('#')).map(str::to_string).collect())
 }
 
 /// (fingerprint, name) for every trusted peer.

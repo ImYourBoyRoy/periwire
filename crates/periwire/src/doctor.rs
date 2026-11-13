@@ -16,7 +16,13 @@ pub fn run(d: &Daemon) -> Vec<Value> {
         Ok(devs) => {
             c.push(check("libusb", "USB access (built-in libusb)", "ok", format!("{} shareable device(s) visible", devs.len()), None));
             if !is_root() && cfg!(target_os = "linux") {
-                c.push(check("usb-perms", "Permission to claim devices", "warn", "not running as root; devices can only be shared if udev grants this user access to them", Some("run the daemon as root (systemd service) or add a udev rule for the devices")));
+                c.push(check(
+                    "usb-perms",
+                    "Permission to claim devices",
+                    "warn",
+                    "not running as root; devices can only be shared if udev grants this user access to them",
+                    Some("run the daemon as root (systemd service) or add a udev rule for the devices"),
+                ));
             } else {
                 c.push(check("usb-perms", "Permission to claim devices", "ok", if is_root() { "running as root" } else { "ok" }, None));
             }
@@ -42,7 +48,13 @@ pub fn run(d: &Daemon) -> Vec<Value> {
     }
 
     // daemon / exporter
-    c.push(check("daemon", "Daemon", if d.running { "ok" } else { "warn" }, if d.running { format!("running since {}s, pid {}", crate::events::now() - d.started, std::process::id()) } else { "not running".into() }, if d.running { None } else { Some("periwire daemon") }));
+    c.push(check(
+        "daemon",
+        "Daemon",
+        if d.running { "ok" } else { "warn" },
+        if d.running { format!("running since {}s, pid {}", crate::events::now() - d.started, std::process::id()) } else { "not running".into() },
+        if d.running { None } else { Some("periwire daemon") },
+    ));
     if d.running {
         let ex = d.export.lock().unwrap().clone();
         let listen = d.cfg.lock().unwrap().export.listen.clone();
@@ -56,7 +68,13 @@ pub fn run(d: &Daemon) -> Vec<Value> {
     // trust
     let trusted = crate::identity::load_trusted().map(|t| t.len()).unwrap_or(0);
     if trusted == 0 {
-        c.push(check("trust", "Trusted peers", "warn", "no peer is trusted yet, so nobody can connect to this machine", Some("periwire trust add <fingerprint>  (the peer shows it with `periwire id`)")));
+        c.push(check(
+            "trust",
+            "Trusted peers",
+            "warn",
+            "no peer is trusted yet, so nobody can connect to this machine",
+            Some("periwire trust add <fingerprint>  (the peer shows it with `periwire id`)"),
+        ));
     } else {
         c.push(check("trust", "Trusted peers", "ok", format!("{trusted} trusted"), None));
     }
@@ -73,7 +91,13 @@ pub fn run(d: &Daemon) -> Vec<Value> {
                     if m.is_empty() {
                         c.push(check(&format!("share:{s}"), &format!("Shared device {s}"), "ok", format!("{:04x}:{:04x} ready", u.id_vendor, u.id_product), None));
                     } else {
-                        c.push(check(&format!("share:{s}"), &format!("Shared device {s}"), "warn", format!("mounted locally ({}); peers can't take it until it's unmounted", m.iter().map(|x| x.1.clone()).collect::<Vec<_>>().join(", ")), Some("unmount it (or eject it) first")));
+                        c.push(check(
+                            &format!("share:{s}"),
+                            &format!("Shared device {s}"),
+                            "warn",
+                            format!("mounted locally ({}); peers can't take it until it's unmounted", m.iter().map(|x| x.1.clone()).collect::<Vec<_>>().join(", ")),
+                            Some("unmount it (or eject it) first"),
+                        ));
                     }
                 }
             }
@@ -84,20 +108,44 @@ pub fn run(d: &Daemon) -> Vec<Value> {
     {
         let st = crate::windrv::status();
         if st.ready {
-            c.push(check("usbip-win2", "Windows virtual USB host controller", "ok", format!("installed (usbip-win2 {}, host controller {})", crate::windrv::VERSION, st.device.clone().unwrap_or_default()), None));
+            c.push(check(
+                "usbip-win2",
+                "Windows virtual USB host controller",
+                "ok",
+                format!("installed (usbip-win2 {}, host controller {})", crate::windrv::VERSION, st.device.clone().unwrap_or_default()),
+                None,
+            ));
         } else {
-            c.push(check("usbip-win2", "Windows virtual USB host controller", "warn", "not installed: needed to use remote devices on Windows", Some("run `periwire driver install` as Administrator (the signed driver is carried inside this program)")));
+            c.push(check(
+                "usbip-win2",
+                "Windows virtual USB host controller",
+                "warn",
+                "not installed: needed to use remote devices on Windows",
+                Some("run `periwire driver install` as Administrator (the signed driver is carried inside this program)"),
+            ));
         }
         if !st.vc_runtime {
             c.push(check("vcruntime", "Visual C++ runtime", "warn", "missing: the driver's command-line tools need it", Some("winget install Microsoft.VCRedist.2015+.x64")));
         }
-        c.push(check("winusb", "Sharing from Windows", "info", "devices must use the WinUSB driver to be shared (bind it with Zadig); Windows' own drivers (storage, HID) keep them away from libusb", None));
+        c.push(check(
+            "winusb",
+            "Sharing from Windows",
+            "info",
+            "devices must use the WinUSB driver to be shared (bind it with Zadig); Windows' own drivers (storage, HID) keep them away from libusb",
+            None,
+        ));
     }
 
     // competing software
     for (name, what) in [("vhusbd", "VirtualHere server"), ("vhclientx86_64", "VirtualHere client"), ("usbipd", "usbipd")] {
         if process_running(name) {
-            c.push(check(&format!("conflict:{name}"), &format!("{what} is running"), "warn", format!("`{name}` may hold the same devices"), Some(&format!("stop `{name}` before sharing the devices it manages"))));
+            c.push(check(
+                &format!("conflict:{name}"),
+                &format!("{what} is running"),
+                "warn",
+                format!("`{name}` may hold the same devices"),
+                Some(&format!("stop `{name}` before sharing the devices it manages")),
+            ));
         }
     }
     c

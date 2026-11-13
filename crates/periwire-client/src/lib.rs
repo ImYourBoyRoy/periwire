@@ -41,16 +41,10 @@ pub enum ConnectError {
 impl std::fmt::Display for ConnectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConnectError::NotRunning(p) => write!(
-                f,
-                "the periwire daemon is not running (looked for {}). Start it with `periwire daemon`.",
-                p.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")
-            ),
-            ConnectError::Denied(p) => write!(
-                f,
-                "permission denied on {}. The daemon runs as another user: run `periwire daemon --socket-group <group>` or use sudo.",
-                p.display()
-            ),
+            ConnectError::NotRunning(p) => {
+                write!(f, "the periwire daemon is not running (looked for {}). Start it with `periwire daemon`.", p.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))
+            }
+            ConnectError::Denied(p) => write!(f, "permission denied on {}. The daemon runs as another user: run `periwire daemon --socket-group <group>` or use sudo.", p.display()),
             ConnectError::Io(e) => write!(f, "{e}"),
         }
     }

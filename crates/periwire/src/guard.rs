@@ -274,7 +274,9 @@ mod tests {
     #[test]
     fn reads_and_probes_pass_through() {
         let mut g = g();
-        for cdb in [&[0x00, 0, 0, 0, 0, 0][..], &[0x12, 0, 0, 0, 36, 0], &[0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0x28, 0, 0, 0, 0, 0, 0, 0, 8, 0], &[0x9e, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0]] {
+        for cdb in
+            [&[0x00, 0, 0, 0, 0, 0][..], &[0x12, 0, 0, 0, 36, 0], &[0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0x28, 0, 0, 0, 0, 0, 0, 0, 8, 0], &[0x9e, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0]]
+        {
             assert_eq!(g.on_submit(2, false, 31, &cbw(1, 8, true, cdb)), Verdict::Forward, "{cdb:02x?}");
         }
         assert_eq!(g.on_submit(1, true, 512, &[]), Verdict::Forward);

@@ -6,7 +6,10 @@ use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvi
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{ClientConfig, DigitallySignedStruct, DistinguishedName, Error, ServerConfig, SignatureScheme};
-use std::{collections::HashSet, sync::{Arc, Mutex}};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
@@ -61,9 +64,15 @@ impl ServerCertVerifier for Pinned {
 }
 
 impl ClientCertVerifier for Pinned {
-    fn offer_client_auth(&self) -> bool { true }
-    fn client_auth_mandatory(&self) -> bool { true }
-    fn root_hint_subjects(&self) -> &[DistinguishedName] { &[] }
+    fn offer_client_auth(&self) -> bool {
+        true
+    }
+    fn client_auth_mandatory(&self) -> bool {
+        true
+    }
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        &[]
+    }
     fn verify_client_cert(&self, end_entity: &CertificateDer<'_>, _i: &[CertificateDer<'_>], _t: UnixTime) -> Result<ClientCertVerified, Error> {
         self.check(end_entity)?;
         Ok(ClientCertVerified::assertion())

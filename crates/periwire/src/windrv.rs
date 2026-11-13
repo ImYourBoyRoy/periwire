@@ -230,12 +230,11 @@ pub fn uninstall() -> Result<()> {
 pub fn elevate_and_wait(args: &[&str]) -> Result<i32> {
     let exe = std::env::current_exe()?;
     let arglist = args.join(" ");
-    let ps = format!(
-        "$p = Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
-        exe.display().to_string().replace('\'', "''"),
-        arglist.replace('\'', "''")
-    );
-    let st = Command::new(sysdir().join(r"WindowsPowerShell\v1.0\powershell.exe")).args(["-NoProfile", "-NonInteractive", "-Command", &ps]).status().map_err(|e| anyhow!("could not start PowerShell to ask for elevation: {e}"))?;
+    let ps = format!("$p = Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -Wait -PassThru; exit $p.ExitCode", exe.display().to_string().replace('\'', "''"), arglist.replace('\'', "''"));
+    let st = Command::new(sysdir().join(r"WindowsPowerShell\v1.0\powershell.exe"))
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
+        .status()
+        .map_err(|e| anyhow!("could not start PowerShell to ask for elevation: {e}"))?;
     Ok(st.code().unwrap_or(1))
 }
 

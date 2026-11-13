@@ -85,8 +85,8 @@ fn partition_starts(src: &mut dyn SectorSource) -> Vec<u64> {
                     let entries_lba = u64le(&h, 72).unwrap_or(0);
                     let count = u32le(&h, 80).unwrap_or(0).min(128) as u64;
                     let size = u32le(&h, 84).unwrap_or(0) as u64;
-                    if entries_lba >= 2 && size >= 128 && size <= 512 && size % 8 == 0 {
-                        let sectors = ((count * size + 511) / 512).clamp(1, 32) as u32;
+                    if entries_lba >= 2 && (128..=512).contains(&size) && size.is_multiple_of(8) {
+                        let sectors = (count * size).div_ceil(512).clamp(1, 32) as u32;
                         if let Some(t) = src.read(entries_lba, sectors) {
                             for i in 0..count as usize {
                                 let e = i * size as usize;
@@ -144,7 +144,7 @@ fn log_extent(rec: &[u8], recsz: usize) -> Option<(u64, u64, u64)> {
             break;
         }
         let len = u32le(&r, p + 4)? as usize;
-        if len < 24 || len % 8 != 0 || p + len > recsz {
+        if len < 24 || !len.is_multiple_of(8) || p + len > recsz {
             return None;
         }
         let (resident, name_len) = (*r.get(p + 8)? == 0, *r.get(p + 9)?);
@@ -210,7 +210,7 @@ fn volume(src: &mut dyn SectorSource, start_lba: u64) -> Option<Volume> {
     let rec_lba = start_lba.checked_add(mft.checked_mul(spc)?)?.checked_add(2 * recsz / SECTOR as u64)?;
     let rec = src.read(rec_lba, (recsz / SECTOR as u64) as u32)?;
     let (lcn, run_clusters, size) = log_extent(&rec, recsz as usize)?;
-    if lcn == 0 || run_clusters.checked_mul(cluster)? < HEAD as u64 || size < 2 * 4096 || size > (1 << 36) {
+    if lcn == 0 || run_clusters.checked_mul(cluster)? < HEAD as u64 || !(2 * 4096..=1 << 36).contains(&size) {
         return None;
     }
     let log_lba = start_lba.checked_add(lcn.checked_mul(spc)?)?;
@@ -370,7 +370,7 @@ mod tests {
         r[6..8].copy_from_slice(&3u16.to_le_bytes()); // 1 + 2 sectors
         r[0x14..0x16].copy_from_slice(&0x38u16.to_le_bytes()); // first attribute
         r[0x16..0x18].copy_from_slice(&1u16.to_le_bytes()); // in use
-        // $FILE_NAME (resident), content 66 + 16 bytes of name
+                                                            // $FILE_NAME (resident), content 66 + 16 bytes of name
         let a = 0x38;
         r[a..a + 4].copy_from_slice(&0x30u32.to_le_bytes());
         r[a + 4..a + 8].copy_from_slice(&112u32.to_le_bytes());

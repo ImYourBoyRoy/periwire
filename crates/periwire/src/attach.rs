@@ -444,7 +444,9 @@ async fn once(att: &Arc<Attachment>, cancel: &mut watch::Receiver<bool>) -> Resu
 #[cfg(windows)]
 async fn once(att: &Arc<Attachment>, cancel: &mut watch::Receiver<bool>) -> Result<End> {
     use tokio::net::TcpListener;
-    let usbip = crate::windrv::usbip_exe_or_extract().or_else(crate::winusbip::find).ok_or_else(|| anyhow::anyhow!("the Windows virtual USB host controller driver is not installed: run `periwire driver install` as Administrator"))?;
+    let usbip = crate::windrv::usbip_exe_or_extract()
+        .or_else(crate::winusbip::find)
+        .ok_or_else(|| anyhow::anyhow!("the Windows virtual USB host controller driver is not installed: run `periwire driver install` as Administrator"))?;
     let mut remote = tokio::select! {
         r = import::connect(&att.addr) => r?,
         _ = cancel.changed() => return Ok(End::Cancelled),

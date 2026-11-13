@@ -42,15 +42,29 @@ pub struct Msg {
 }
 
 impl Msg {
-    pub fn kind(&self) -> u32 { self.control & TYPE_MASK }
-    pub fn valid(&self) -> bool { self.control & VALID != 0 }
-    pub fn wants_completion(&self) -> bool { self.control & NO_RESPONSE == 0 }
+    pub fn kind(&self) -> u32 {
+        self.control & TYPE_MASK
+    }
+    pub fn valid(&self) -> bool {
+        self.control & VALID != 0
+    }
+    pub fn wants_completion(&self) -> bool {
+        self.control & NO_RESPONSE == 0
+    }
     /// Device address of a command (data0 bits 0-7).
-    pub fn device(&self) -> u8 { self.data0 as u8 }
+    pub fn device(&self) -> u8 {
+        self.data0 as u8
+    }
     /// Endpoint address of a command (data0 bits 8-15).
-    pub fn endpoint(&self) -> u8 { (self.data0 >> 8) as u8 }
-    pub fn length(&self) -> u32 { self.data0 & LEN_MASK }
-    pub fn buffer(&self) -> u64 { self.data1 }
+    pub fn endpoint(&self) -> u8 {
+        (self.data0 >> 8) as u8
+    }
+    pub fn length(&self) -> u32 {
+        self.data0 & LEN_MASK
+    }
+    pub fn buffer(&self) -> u64 {
+        self.data1
+    }
 }
 
 /// One decoded transfer-ring entry.
