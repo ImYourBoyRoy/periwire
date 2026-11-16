@@ -1,0 +1,24 @@
+# PeriWire
+
+> Share USB devices over the network, securely. A small Rust daemon with a command line, an MCP server and a desktop app for Linux, Windows and macOS. Plug a device into computer A, use it on computer B with its own drivers.
+
+PeriWire speaks USB/IP inside mutually authenticated TLS (pairing by certificate fingerprint, no accounts or cloud). The CLI, the MCP server and the desktop app all drive the same local control API. Start with AGENTS.md.
+
+## Start here
+- [AGENTS.md](https://github.com/ImYourBoyRoy/periwire/blob/main/AGENTS.md): connect an assistant, the safety rules, the code layout
+- [README](https://github.com/ImYourBoyRoy/periwire/blob/main/README.md): install and two-computer quick start
+
+## Docs
+- [MCP server](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/MCP.md): 20 tools, safety rules, setup
+- [CLI reference](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/CLI.md): every command, `--json`, exit codes
+- [Getting started](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/GETTING-STARTED.md): LAN, across subnets, into a VM
+- [Control API](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/API.md): the JSON protocol shared by all front ends
+- [Desktop app](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/GUI.md): tray, themes, demo mode
+- [Troubleshooting](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/TROUBLESHOOTING.md): symptoms and fixes
+
+## Optional
+- [Architecture](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/ARCHITECTURE.md)
+- [Security model](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/SECURITY.md)
+- [Platform status](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/PLATFORMS.md) and [macOS notes](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/MACOS.md)
+- [Tested on real machines](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/TESTING.md)
+- [Changelog](https://github.com/ImYourBoyRoy/periwire/blob/main/CHANGELOG.md)

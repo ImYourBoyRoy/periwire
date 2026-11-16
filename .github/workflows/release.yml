@@ -145,7 +145,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write # lets the build-provenance attestation be signed by GitHub
+      attestations: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -157,6 +160,18 @@ jobs:
           cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
           ls -la
+      - name: List the Rust dependencies as an SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          file: Cargo.lock
+          format: cyclonedx-json
+          output-file: dist/periwire.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest where every download came from
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
       - uses: softprops/action-gh-release@v2
         with:
           draft: true # review the notes and the files, then publish it yourself

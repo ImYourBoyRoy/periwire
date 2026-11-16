@@ -2,7 +2,7 @@
 
 # PeriWire
 
-[![CI](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml/badge.svg)](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml/badge.svg)](https://github.com/ImYourBoyRoy/periwire/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Latest release](https://img.shields.io/github/v/release/ImYourBoyRoy/periwire)](https://github.com/ImYourBoyRoy/periwire/releases)
 
 **Plug a USB device into one computer, use it on another.** periwire forwards USB devices over your network so a
 flash drive, iPad, webcam, security key or dongle that is physically attached to *computer A* shows up on *computer B*
@@ -83,7 +83,9 @@ daemon and the MCP server; one self-contained file) and `periwire-gui` (the desk
 | macOS (Apple silicon and Intel) | `.dmg`, or the `.tar.gz` | not notarised yet: right-click > Open the first time. Importing devices needs Apple's USB host-controller entitlement or a Mac with SIP relaxed; sharing a device works everywhere ([macOS notes](docs/MACOS.md)) |
 | Windows (x86_64) | `-setup.exe` installer, or the portable `.zip` | the signed USB driver is inside `periwire.exe`; the app installs it with one click |
 
-Check a download against `SHA256SUMS.txt` on the release page. To build from source (Rust, see `rust-toolchain.toml`):
+Check a download against `SHA256SUMS.txt` on the release page, and where it came from with
+`gh attestation verify <file> --repo ImYourBoyRoy/periwire` (each release also carries a dependency list, `periwire.cdx.json`;
+see [SECURITY.md](SECURITY.md#verifying-a-download)). To build from source (Rust, see `rust-toolchain.toml`):
 
 ```bash
 cargo build --release                      # -> target/release/periwire   (CLI, daemon, MCP server)
@@ -91,8 +93,8 @@ cargo build --release -p periwire-gui        # -> target/release/periwire-gui (d
 ```
 
 Run the daemon as a service so it starts at boot: `sudo periwire service install` (Linux/systemd), or
-`periwire service print` for the launchd/systemd definition. The tray icon belongs to the desktop app, so start `periwire-gui` (add it to your login items to
-have it always) to see it; the daemon alone has no icon.
+`periwire service print` for the launchd/systemd definition. Whenever a daemon runs (from a terminal, as a service, or started by an AI assistant) a taskbar icon appears;
+closing the desktop app's window hides it to that icon ([how it works](docs/GUI.md#run)). Turn it off with `--no-tray`.
 
 ## What it can do
 
@@ -123,6 +125,8 @@ have it always) to see it; the daemon alone has no icon.
 | [Testing status](docs/TESTING.md) | What is verified on real machines and the checklist for the next round |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Symptoms and fixes |
 | [Development](docs/DEVELOPMENT.md) | Building, testing, the lab scripts |
+| [AGENTS.md](AGENTS.md) · [llms.txt](llms.txt) | The shortest path for AI assistants and coding agents |
+| [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) | |
 
 ---
 

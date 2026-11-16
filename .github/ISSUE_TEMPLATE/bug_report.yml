@@ -1,0 +1,34 @@
+name: Bug report
+description: Something does not work, or works differently from the docs
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. periwire share 2-2 on computer A\n2. periwire attach A 2-2 on computer B\n3. ..."
+  - type: input
+    id: version
+    attributes:
+      label: PeriWire version (`periwire --version`)
+    validations: {required: true}
+  - type: input
+    id: os
+    attributes:
+      label: Operating system of the computer sharing the device, and of the computer using it
+      placeholder: "A: Ubuntu 24.04; B: macOS 15 (Apple silicon)"
+    validations: {required: true}
+  - type: input
+    id: device
+    attributes:
+      label: The USB device (name and `vid:pid` from `periwire devices`)
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `periwire doctor` (and `periwire logs` if relevant)
+      render: text

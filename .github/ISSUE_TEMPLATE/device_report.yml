@@ -1,0 +1,24 @@
+name: Device compatibility report
+description: Tell us whether a USB device worked, partly worked or did not
+labels: [device]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device (name and `vid:pid`)
+    validations: {required: true}
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Works, Works with problems, Does not work]
+    validations: {required: true}
+  - type: input
+    id: os
+    attributes:
+      label: Sharing computer and using computer (OS and version)
+    validations: {required: true}
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (speed, errors, what you did with it)

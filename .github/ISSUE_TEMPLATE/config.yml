@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/ImYourBoyRoy/periwire/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Troubleshooting guide
+    url: https://github.com/ImYourBoyRoy/periwire/blob/main/docs/TROUBLESHOOTING.md
+    about: Common symptoms and fixes.
