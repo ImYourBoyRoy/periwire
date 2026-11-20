@@ -2608,7 +2608,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "periwire"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "block2",
@@ -2635,7 +2635,7 @@ dependencies = [
 
 [[package]]
 name = "periwire-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -2645,7 +2645,7 @@ dependencies = [
 
 [[package]]
 name = "periwire-gui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "periwire-client",
  "serde",
@@ -4344,7 +4344,7 @@ dependencies = [
 
 [[package]]
 name = "usbip-proto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "thiserror 2.0.21",
 ]

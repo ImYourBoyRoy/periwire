@@ -5,29 +5,20 @@ use anyhow::{anyhow, bail, Result};
 use std::path::PathBuf;
 use tokio::process::Command;
 
+/// A `usbip.exe` installed by the upstream installer, in Program Files (only administrators can write there). The copy PeriWire carries
+/// is `windrv::usbip_exe_or_extract`, which checks it against the embedded bytes. Nothing is taken from `PATH` or from the folder this
+/// program runs from: the daemon is elevated, and either could be a place an ordinary user can write to.
 pub fn find() -> Option<PathBuf> {
-    let mut cands: Vec<PathBuf> = vec![crate::windrv::install_dir().join("usbip.exe")];
-    for var in ["ProgramFiles", "ProgramW6432"] {
-        if let Some(pf) = std::env::var_os(var) {
-            cands.push(PathBuf::from(&pf).join("USBip").join("usbip.exe"));
-        }
-    }
-    if let Some(paths) = std::env::var_os("PATH") {
-        cands.extend(std::env::split_paths(&paths).map(|d| d.join("usbip.exe")));
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(d) = exe.parent() {
-            cands.push(d.join("usbip.exe"));
-        }
-    }
-    cands.into_iter().find(|p| p.exists())
+    ["ProgramFiles", "ProgramW6432"].iter().filter_map(std::env::var_os).map(|pf| PathBuf::from(pf).join("USBip").join("usbip.exe")).find(|p| p.exists())
 }
 
 /// `usbip.exe -t <port> attach -r 127.0.0.1 -b <busid> --terse --once`: the global `-t` is the server's TCP port (after
 /// `attach`, `-t` would mean --terse). `--terse` prints just the virtual port number; `--once` stops usbip-win2 from
 /// retrying by itself, because the daemon owns reconnection.
 pub async fn attach(usbip: PathBuf, port: u16, busid: String) -> Result<u32> {
-    let out = Command::new(&usbip).args(["-t", &port.to_string(), "attach", "-r", "127.0.0.1", "-b", &busid, "--terse", "--once"]).output().await?;
+    let mut cmd = Command::new(&usbip);
+    cmd.args(["-t", &port.to_string(), "attach", "-r", "127.0.0.1", "-b", &busid, "--terse", "--once"]).kill_on_drop(true); // not left running if the attach is cancelled
+    let out = tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output()).await.map_err(|_| anyhow!("usbip.exe attach did not finish within 60 s"))??;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     if !out.status.success() {
         bail!("usbip.exe attach failed: {}", text.trim());

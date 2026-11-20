@@ -94,3 +94,8 @@ lost. The pages are built from the journal's size alone; everything is bounds-ch
 recognise (another sector size, an unusual layout, a failed read) means no change. A journal with *unfinished* changes cannot be
 faked and is reported in the exporter's log instead. Only the Windows importer asks for this; `PERIWIRE_NTFS_JOURNAL=0` turns it
 off and `=1` turns it on elsewhere.
+
+**Windows tools.** The elevated daemon starts `usbip.exe` (carried inside `periwire.exe`) from `%ProgramData%\PeriWire\usbip-win2`. Each time, it takes
+ownership of that folder for Administrators, resets its permissions to Administrators and SYSTEM (read and run for everyone else), rewrites any file that
+is not byte-for-byte the embedded copy, and runs only that copy. It never looks in `PATH` or in the program's own folder, so a folder an ordinary user
+created or can write to cannot be used to run a program as Administrator.

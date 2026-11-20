@@ -3,19 +3,45 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
-## [Unreleased]
+## [0.1.1] — 2026-11-20
+
+A bugfix release after a review of the whole code base and tests on Linux, Windows and macOS hardware. Everyone on 0.1.0 should update.
 
 ### Fixed
 - The desktop app could say "The periwire daemon isn't running" while a daemon was running, and flicker between real and
   simulated data. The page missed the one-time "connected" announcement when the app started hidden next to the daemon, and the
   built-in demo simulator kept sending fake status updates outside demo mode. The page now treats a status update as proof of a
-  daemon, and only demo mode runs the simulator.
+  daemon, and only demo mode runs the simulator. No false offline screen while the app is still connecting.
 - *Start daemon* in the app and tray no longer starts a second daemon when one already answers.
+- Sharing: every finished session waited 5 s and could never park the device for a reconnect (a handle on the device was kept open);
+  removing a share or changing its read-only flag while someone used it locked up the call; a single failed `accept()` (for example no
+  free file descriptors) stopped sharing for good; a slow flash drive pausing mid-transfer could return a short read.
+- Safety limits: URB length, packet count, endpoint number and reply length are validated before anything is allocated for them (a hostile
+  or corrupt peer could make the daemon allocate gigabytes). A trusted computer's name can no longer carry a line break and add a second
+  fingerprint to the trust list; trust lines are parsed strictly and written atomically.
+- Control socket: a root daemon started with `sudo`/`pkexec` gives the socket to that user only, not to their primary group (on systems where
+  every user shares one, every local user could control the daemon). Only a group named with `--socket-group` gets in. Request lines are
+  capped, and a path that is not a socket is never replaced.
+- `--listen` and `--no-export` last for that run; they are no longer saved by an unrelated change such as sharing a device.
+- Safe eject: handles mount points with spaces, encrypted (LUKS/LVM) drives and nested mounts, flushes just the drive instead of the whole
+  system, and gives up with a clear message instead of hanging. Shutdown waits for imports with one shared deadline.
+- App: a slow answer for an earlier computer can no longer replace the list for the one you chose (and attach the wrong device); a remembered
+  read-only attachment stays read-only; two identical devices are shared one at a time (by port); the window may only call the daemon methods
+  its own buttons use, and its content security policy is tighter.
+- `logs` and `watch` exit with code 3 when no daemon runs (as documented); MCP confirmation refusals have their own error code and hint.
+- Windows: the elevated daemon runs the USB/IP tools only from a folder that only Administrators can change (ownership and permissions are
+  reset each time), only if they match the copies carried inside the program byte for byte, and no longer searches `PATH`. The attach
+  command has a time limit and is not left running when cancelled.
 
 ### Changed
 - Quitting the app now has an owner-aware meaning. A daemon the app started goes down with it (*Quit and stop the daemon*, with the
   number of devices in use it will disconnect); a daemon started anywhere else keeps running, and the tray offers *Quit and stop the
   daemon* next to *Quit the app*.
+- Internals: `export.rs`, the CLI entry point and the app shell are split into modules; docs corrected against the code.
+
+### Known
+- An iPad on a USB 3 (10 Gbps) port dropped off the bus during 100-200 MB pushes in testing; on a USB 2 port the same push passed hash-identical.
+  Use a USB 2 port or hub for the iPad ([testing notes](docs/TESTING.md)).
 
 ## [0.1.0] — 2026-11
 
@@ -44,4 +70,5 @@ First public release.
 - macOS and Windows programs are not signed with a paid developer certificate (macOS: right-click > Open the first time).
 - See [platform status](docs/PLATFORMS.md) and [what has been tested](docs/TESTING.md).
 
+[0.1.1]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.0

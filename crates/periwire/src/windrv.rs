@@ -57,6 +57,15 @@ pub fn install_dir() -> PathBuf {
     base.join("PeriWire").join("usbip-win2")
 }
 
+/// Write `bytes` to `p` in one step: a crash or a full disk must not leave a half-written program that is trusted later.
+fn write_atomic(p: &Path, bytes: &[u8]) -> Result<()> {
+    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = p.with_file_name(format!("{name}.part"));
+    std::fs::write(&tmp, bytes).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, p).with_context(|| format!("replacing {}", p.display()))?;
+    Ok(())
+}
+
 /// Write the embedded files into `dir` (only the ones that differ).
 pub fn extract(dir: &Path) -> Result<()> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -65,9 +74,46 @@ pub fn extract(dir: &Path) -> Result<()> {
         if std::fs::read(&p).map(|b| b == *bytes).unwrap_or(false) {
             continue;
         }
-        std::fs::write(&p, bytes).with_context(|| format!("writing {}", p.display()))?;
+        write_atomic(&p, bytes)?;
     }
     Ok(())
+}
+
+/// Take `dir` away from whoever created it and leave it changeable only by SYSTEM and Administrators (everyone else may read and run).
+/// The tools in it are started by an elevated process, so a folder that an ordinary user pre-created, or can write to, would let that user
+/// plant a program that runs as Administrator. Well-known SIDs are used so this works in every Windows language.
+fn lock_down(dir: &Path) -> Result<()> {
+    let icacls = sysdir().join("icacls.exe");
+    let d = dir.display().to_string();
+    let steps: [Vec<&str>; 3] = [
+        vec![&d, "/setowner", "*S-1-5-32-544", "/T", "/C", "/Q"],
+        vec![&d, "/reset", "/T", "/C", "/Q"],
+        vec![&d, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)RX", "/T", "/C", "/Q"],
+    ];
+    for args in steps {
+        let (c, t) = run(&icacls, &args)?;
+        if c != 0 {
+            bail!("could not restrict {} to Administrators (icacls exit {c}): {}", dir.display(), tail(&t));
+        }
+    }
+    Ok(())
+}
+
+/// The tools the importer starts, by name: every file of `FILES` that is a program or library (not driver packages or the licence).
+const TOOLS: &[&str] = &["usbip.exe", "libusbip.dll", "resources.dll", "devnode.exe"];
+
+/// Are the tools in `dir` exactly the ones carried inside this program?
+fn tools_match(dir: &Path) -> bool {
+    TOOLS.iter().all(|t| FILES.iter().find(|(n, _)| n == t).is_some_and(|(_, bytes)| std::fs::read(dir.join(t)).map(|b| b == *bytes).unwrap_or(false)))
+}
+
+/// Unpack into the install directory, locking the directory down first when this process is elevated, and replacing anything that differs.
+fn extract_install(dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    if is_admin() {
+        lock_down(dir)?;
+    }
+    extract(dir)
 }
 
 /// The extracted `usbip.exe`, if present.
@@ -76,12 +122,17 @@ pub fn usbip_exe() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
-/// Like `usbip_exe`, but unpacks the embedded tools first when they are missing (the daemon runs elevated).
+/// The `usbip.exe` to run: the one carried inside this program, in a folder only administrators can write to. The daemon runs elevated, so it
+/// refreshes the folder and its contents first; a copy that is not byte-for-byte the embedded one is never returned.
 pub fn usbip_exe_or_extract() -> Option<PathBuf> {
-    usbip_exe().or_else(|| {
-        let _ = extract(&install_dir());
-        usbip_exe()
-    })
+    let dir = install_dir();
+    if is_admin() {
+        if let Err(e) = extract_install(&dir) {
+            crate::logln!("could not prepare the USB/IP tools: {e:#}");
+            return None;
+        }
+    }
+    tools_match(&dir).then(|| dir.join("usbip.exe"))
 }
 
 fn sysdir() -> PathBuf {
@@ -160,7 +211,7 @@ pub fn install() -> Result<bool> {
         bail!("installing a driver needs Administrator rights: run this from an elevated prompt, or add --elevate");
     }
     let dir = install_dir();
-    extract(&dir)?; // also refreshes the tools if this program is newer
+    extract_install(&dir)?; // also refreshes the tools if this program is newer, and locks the folder down
     if status().ready {
         return Ok(false); // already installed: running devnode again could create a second host controller device
     }
