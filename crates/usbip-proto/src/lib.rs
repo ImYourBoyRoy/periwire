@@ -250,6 +250,18 @@ pub const MAX_URB_BYTES: i32 = 16 * 1024 * 1024;
 /// Most isochronous packet descriptors one transfer may carry.
 pub const MAX_ISO_PACKETS: i32 = 4096;
 
+/// A transfer that is not isochronous has no packet descriptors: USB/IP importers write 0, or 0xFFFF_FFFF (-1) as the Windows
+/// driver and the protocol notes do. Both mean none.
+const NOT_ISO: i32 = -1;
+
+fn packet_count(value: i32) -> Result<(), ProtoError> {
+    if value == NOT_ISO {
+        Ok(())
+    } else {
+        in_range("isochronous packet count", value, MAX_ISO_PACKETS)
+    }
+}
+
 fn in_range(what: &'static str, value: i32, max: i32) -> Result<(), ProtoError> {
     if (0..=max).contains(&value) {
         Ok(())
@@ -263,7 +275,7 @@ impl CmdSubmit {
     pub fn validate(&self) -> Result<(), ProtoError> {
         in_range("endpoint number", i32::try_from(self.basic.ep).unwrap_or(i32::MAX), 15)?;
         in_range("URB length", self.transfer_buffer_length, MAX_URB_BYTES)?;
-        in_range("isochronous packet count", self.number_of_packets, MAX_ISO_PACKETS)
+        packet_count(self.number_of_packets)
     }
 }
 
@@ -271,7 +283,7 @@ impl RetSubmit {
     /// Same for a reply: the length it announces and the packet descriptors that would follow it.
     pub fn validate(&self) -> Result<(), ProtoError> {
         in_range("reply length", self.actual_length, MAX_URB_BYTES)?;
-        in_range("isochronous packet count", self.number_of_packets, MAX_ISO_PACKETS)
+        packet_count(self.number_of_packets)
     }
 }
 
@@ -486,7 +498,9 @@ mod tests {
             assert!(c.validate().is_err(), "length {bad}");
         }
         c.transfer_buffer_length = 0;
-        for bad in [-1, MAX_ISO_PACKETS + 1, i32::MAX] {
+        c.number_of_packets = -1;
+        assert!(c.validate().is_ok(), "the Windows importer writes -1 for a transfer that is not isochronous");
+        for bad in [-2, MAX_ISO_PACKETS + 1, i32::MAX] {
             c.number_of_packets = bad;
             assert!(c.validate().is_err(), "packets {bad}");
         }
@@ -511,5 +525,7 @@ mod tests {
         assert!(r(MAX_URB_BYTES + 1, 0).validate().is_err());
         assert!(r(-5, 0).validate().is_err());
         assert!(r(0, MAX_ISO_PACKETS + 1).validate().is_err());
+        assert!(r(0, -1).validate().is_ok(), "-1 = not isochronous");
+        assert!(r(0, -2).validate().is_err());
     }
 }
