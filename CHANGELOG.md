@@ -3,6 +3,15 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [Unreleased]
+
+### Fixed
+- The desktop app could say "The periwire daemon isn't running" while a daemon was running, and flicker between real and
+  simulated data. The page missed the one-time "connected" announcement when the app started hidden next to the daemon, and the
+  built-in demo simulator kept sending fake status updates outside demo mode. The page now treats a status update as proof of a
+  daemon, and only demo mode runs the simulator.
+- *Start daemon* in the app and tray no longer starts a second daemon when one already answers.
+
 ## [0.1.0] — 2026-11
 
 First public release.

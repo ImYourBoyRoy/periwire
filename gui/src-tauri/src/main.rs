@@ -44,8 +44,7 @@ fn find_periwire() -> Option<std::path::PathBuf> {
 }
 
 /// Start the daemon. `privileged` asks for administrator rights through the OS (needed on Linux to import devices).
-#[tauri::command]
-fn start_daemon(privileged: bool) -> Result<(), Value> {
+fn spawn_daemon(privileged: bool) -> Result<(), Value> {
     let bin = find_periwire().ok_or_else(|| err("failed", "could not find the `periwire` program next to this app or in PATH".into()))?;
     let mut cmd = if privileged && cfg!(target_os = "linux") {
         let mut c = std::process::Command::new("pkexec");
@@ -61,6 +60,19 @@ fn start_daemon(privileged: bool) -> Result<(), Value> {
         .spawn()
         .map(|_| ())
         .map_err(|e| err("failed", format!("could not start the daemon: {e}")))
+}
+
+/// Start a daemon, unless one already answers: a second one would fight the first over its port and its devices.
+async fn ensure_daemon(privileged: bool) -> Result<(), Value> {
+    if Client::connect_default().await.is_ok() {
+        return Ok(());
+    }
+    spawn_daemon(privileged)
+}
+
+#[tauri::command]
+async fn start_daemon(privileged: bool) -> Result<(), Value> {
+    ensure_daemon(privileged).await
 }
 
 fn s<'a>(v: &'a Value, k: &str) -> &'a str {
@@ -323,10 +335,14 @@ fn main() {
                         "open" => show_main(app),
                         "quit" => app.exit(0),
                         "start" => {
-                            let _ = start_daemon(false);
+                            tauri::async_runtime::spawn(async {
+                                let _ = ensure_daemon(false).await;
+                            });
                         }
                         "start-root" => {
-                            let _ = start_daemon(true);
+                            tauri::async_runtime::spawn(async {
+                                let _ = ensure_daemon(true).await;
+                            });
                         }
                         _ => {
                             if let Some((kind, n)) = id.split_once(':') {

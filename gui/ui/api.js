@@ -117,7 +117,7 @@ const sim = (() => {
       default: fail("not_found", `unknown method ${method}`);
     }
   }
-  setInterval(() => { // live counters
+  if (demo) setInterval(() => { // live counters (only the simulated daemon has any: the real app gets its status from the real daemon)
     st.attachments.forEach((a) => { if (a.state === "attached") { a.bytes_in += Math.floor(Math.random() * 90000 + (a.id % 2 ? 40000 : 400000)); a.bytes_out += Math.floor(Math.random() * 30000); } });
     st.sessions.forEach((s) => { s.bytes_out += Math.floor(Math.random() * 600000 + 200000); s.bytes_in += Math.floor(Math.random() * 40000); s.urbs += 70; });
     emit("status", { ...st, uptime: now() - st.started, shares: devices.filter((d) => d.shared).map((d) => ({ spec: `${d.vid}:${d.pid}`, present: true })) });

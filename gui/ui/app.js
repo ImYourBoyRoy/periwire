@@ -644,13 +644,21 @@ function renderAll() {
 }
 
 // ------------------------------------------------------------------ boot
-on("status", (st) => { S.status = st; updateRates(st); renderAll(); });
-on("connection", async (c) => { S.connected = c; renderActions(); if (c) { await refresh(); try { (await call("logs", { lines: 200 })).forEach(addLog); } catch {} } renderChrome(); });
+// "connected" can arrive before this page has registered its listeners (the app starts hidden, next to the daemon), and the
+// desktop app announces it only once. A status update proves the daemon is there, so it counts as the announcement too.
+async function setConnected(c) {
+  const was = S.connected; S.connected = c; renderActions();
+  if (c && !was) { await refresh(); try { (await call("logs", { lines: 200 })).forEach(addLog); } catch {} }
+  renderChrome();
+}
+on("status", (st) => { S.status = st; updateRates(st); if (!S.connected) setConnected(true); renderAll(); });
+on("connection", setConnected);
 on("event", (ev) => { if (ev.event === "log") addLog(ev.data.line); });
 on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);
 if (demo) { document.body.classList.add("demo"); document.body.append(h("div", { class: "demo-banner" }, "Demo mode — simulated devices")); }
 start();
+if (!demo) call("status").then(() => setConnected(true), () => {}); // ask once at start; do not wait for the first announcement
 go(location.hash.slice(1) && VIEWS.some((v) => v.id === location.hash.slice(1)) ? location.hash.slice(1) : "overview");
 let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { topoSig = ""; renderAll(); const i = VIEWS.findIndex((x) => x.id === S.view); const b = nav.children[i + 1]; if (b) pill.style.transform = `translateY(${b.offsetTop}px)`; }, 120); });
 
