@@ -288,7 +288,7 @@ pub async fn resolve_session(b: &mut Backend, target: &str) -> Result<Value> {
 // ---------- logs / watch ----------
 
 pub async fn logs(lines: usize, follow: bool) -> Result<i32> {
-    let mut c = periwire_client::Client::connect_default().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut c = periwire_client::Client::connect_default().await.map_err(|e| anyhow::Error::from(crate::Exit(3, format!("the daemon is not running ({e}); start it with `periwire daemon`"))))?;
     let v = c.call("logs", json!({"lines": lines})).await.map_err(|e| anyhow::anyhow!("{e}"))?;
     for l in v.as_array().unwrap() {
         println!("{}", l.as_str().unwrap_or(""));
@@ -306,7 +306,7 @@ pub async fn logs(lines: usize, follow: bool) -> Result<i32> {
 }
 
 pub async fn watch(json_out: bool) -> Result<i32> {
-    let mut c = periwire_client::Client::connect_default().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let mut c = periwire_client::Client::connect_default().await.map_err(|e| anyhow::Error::from(crate::Exit(3, format!("the daemon is not running ({e}); start it with `periwire daemon`"))))?;
     c.call("subscribe", json!({})).await.map_err(|e| anyhow::anyhow!("{e}"))?;
     while let Some(ev) = c.next_event().await {
         if json_out {

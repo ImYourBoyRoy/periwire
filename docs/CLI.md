@@ -7,9 +7,10 @@
 | `--json` | Print the raw result as JSON (errors as `{"error":{"message":…}}`). Stable and meant for scripts and AI tools. |
 | `--socket PATH` | Talk to the daemon on this control socket (default: auto-detected; same as env `PERIWIRE_SOCKET`). |
 
-Commands talk to the running **daemon**. Read-only commands (`status`, `devices`, `remote`, `id`, `doctor`, `trust …`,
-`share`/`unshare`) still work without one, answering from local state; commands that need the daemon (`attach`,
-`detach`, `kick`, `export`, `stop`, `logs`, `watch`) exit with code 3 and say how to start it.
+Commands talk to the running **daemon**. Some also work without one: `status`, `devices`, `remote`, `id` and `doctor` answer from
+local state, and `trust …`, `share` and `unshare` read or edit the local trust list and `config.json` (a running daemon is told to
+pick the change up). Commands that need the daemon (`attach`, `detach`, `kick`, `export`, `stop`, `logs`, `watch`) exit with code 3
+and say how to start it.
 
 ## Exit codes
 
@@ -36,8 +37,9 @@ control socket, and re-attaches remembered `--auto` connections.
 
 | Option | |
 |---|---|
-| `--listen ADDR` | Exporter address (default `0.0.0.0:3241`; saved default in `config.json`). |
-| `--no-export` | Do not accept importers (a pure client). |
+| `--listen ADDR` | Exporter address for this run (default `0.0.0.0:3241`, from `config.json`; the option is not saved). |
+| `--no-export` | Do not accept importers (a pure client). Lasts for this run; it is not saved. |
+| `--no-tray` | Do not start the taskbar icon (also `PERIWIRE_NO_TRAY=1`). |
 | `--share SPEC` | Share a device for this run only (repeatable). |
 | `--daemon-socket PATH` | Where to create the control socket. |
 | `--socket-group GROUP` | Group allowed to use the socket (root only). By default the user who ran `sudo`/`pkexec` owns it. |

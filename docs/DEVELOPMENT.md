@@ -15,8 +15,10 @@ Rust 1.80+. libusb is vendored (needs a C compiler); on Linux set up `LIBUDEV_NO
 ```
 crates/usbip-proto     wire format (unit tested)
 crates/periwire          daemon, exporter, importer, CLI, MCP, doctor
+  src/export/          the sharing side: mod (shared state), devices, dev, transfer, listener, import, session, workers, journal
+  src/main.rs, args.rs the entry point and the clap definitions (service.rs, driver_cli.rs: `service` and `driver` commands)
 crates/periwire-client   control-API client (CLI, MCP and GUI use it)
-gui/src-tauri          desktop app shell (tray, daemon watcher)
+gui/src-tauri          desktop app shell: main (window, watcher), daemon (API command, starting and owning a daemon), tray
 gui/ui                 frontend: plain HTML/CSS/JS, built-in demo mode
 docs/                  documentation
 tools/                 developer scripts (not shipped)
@@ -58,6 +60,9 @@ rebuilds while idle in demo mode, and `--check` fails if a page without live tra
 
 ## Conventions
 
+- Keep files under about 500 lines and functions under about 100 (`cargo clippy -- -W clippy::too_many_lines` lists the long ones); split by
+  responsibility into a module directory rather than growing a file.
+- Anything a peer can influence (lengths, counts, names, endpoint numbers) is validated before it is used for an allocation, an index or a file.
 - Everything the UI can do must be reachable through the control API ([API](API.md)), the CLI, and an MCP tool.
 - Add a unit test for new parsing/validation; use `api.rs`'s round-trip test for new API methods.
 - Never `kill -9` a daemon holding devices; use SIGTERM.

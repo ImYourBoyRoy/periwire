@@ -30,7 +30,8 @@ fn bool_p(p: &Value, k: &str) -> bool {
 
 /// Methods and their parameters; also served as `methods` for self-documentation.
 pub const METHODS: &[(&str, &str)] = &[
-    ("ping", "{} -> {version}"),
+    ("ping", "{} -> {pong: true, version}"),
+    ("methods", "{} -> every method with its parameters"),
     ("identity", "{} -> {fingerprint, hostname}"),
     ("identity.reset", "{confirm: true} -> new certificate/fingerprint; every peer must trust the new one; sessions are dropped"),
     ("device.label", "{key, label} -> name a local device (key from `devices`); empty label clears; peers see it"),

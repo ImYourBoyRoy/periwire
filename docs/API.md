@@ -13,8 +13,8 @@ Newline-delimited JSON over a Unix domain socket.
 | a normal user | `$XDG_RUNTIME_DIR/periwire.sock`, else `<config dir>/periwire/periwire.sock` |
 | any | `PERIWIRE_SOCKET` or `--daemon-socket PATH` |
 
-Access is controlled by file permissions (default mode 660, owned by the user who started it with `sudo`/`pkexec`, or the
-group given with `--socket-group`). Anyone who can open the socket can control the daemon, including ejecting devices.
+Access is controlled by file permissions (default mode 660). A root daemon started with `sudo`/`pkexec` gives the socket to that
+user; their primary group is *not* given access (on some systems every user shares one), only a group named with `--socket-group` is. Anyone who can open the socket can control the daemon, including ejecting devices.
 There is no network exposure of this API.
 
 ```
@@ -35,7 +35,7 @@ Try it: `printf '{"id":1,"method":"ping"}\n' | socat - UNIX-CONNECT:/run/periwir
 
 | Method | Params | Result |
 |---|---|---|
-| `ping` | – | `{version}` |
+| `ping` | – | `{pong: true, version}` |
 | `methods` | – | list of methods with parameter summaries |
 | `identity` | – | `{fingerprint, hostname}` |
 | `status` | – | snapshot (below) |

@@ -40,7 +40,7 @@ Annotations tell clients which are read-only (no confirmation needed) and which 
 | `periwire_disconnect_peer` `{target}` | Force a peer off a device we share | | yes |
 | `periwire_trust_list` | Trusted computers | yes | |
 | `periwire_trust_probe` `{addr}` | Read the fingerprint a host presents (does **not** trust it) | yes | |
-| `periwire_trust_add` `{fingerprint, name?, confirmed_by_user}` | Trust a computer | | |
+| `periwire_trust_add` `{fingerprint, name?, confirmed_by_user}` | Trust a computer | | yes |
 | `periwire_trust_remove` `{fingerprint}` | Stop trusting | | yes |
 | `periwire_forget` `{addr, busid}` | Forget a remembered connection | | yes |
 | `periwire_label_device` `{key, label}` | Name a local device (key from `periwire_list_devices`) | | |
@@ -52,6 +52,9 @@ Annotations tell clients which are read-only (no confirmation needed) and which 
 
 ## Safety rules built in
 
+- **`confirmed_by_user` is an attestation, not a lock.** The server cannot see who typed what; it refuses until the model says the user
+  confirmed, and its instructions tell the model to say so only after the user did. A client that also has a shell can still run
+  `periwire trust add`, so treat shell access as the real boundary. JSON-RPC batch arrays are not supported (send one request at a time).
 - **Trust needs a human.** `periwire_trust_add` refuses unless `confirmed_by_user` is `true`, and the server instructions
   tell the model to set it only after the user compared the fingerprint with `periwire id` on the other computer.
   A wrong trust decision lets another machine take the user's devices.
