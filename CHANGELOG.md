@@ -12,6 +12,11 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
   daemon, and only demo mode runs the simulator.
 - *Start daemon* in the app and tray no longer starts a second daemon when one already answers.
 
+### Changed
+- Quitting the app now has an owner-aware meaning. A daemon the app started goes down with it (*Quit and stop the daemon*, with the
+  number of devices in use it will disconnect); a daemon started anywhere else keeps running, and the tray offers *Quit and stop the
+  daemon* next to *Quit the app*.
+
 ## [0.1.0] — 2026-11
 
 First public release.

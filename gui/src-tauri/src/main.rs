@@ -62,12 +62,70 @@ fn spawn_daemon(privileged: bool) -> Result<(), Value> {
         .map_err(|e| err("failed", format!("could not start the daemon: {e}")))
 }
 
+/// Which daemon this app started, so that quitting the app can take that one (and only that one) down with it.
+/// A daemon started from a terminal, as a service or by an AI assistant belongs to whoever started it.
+#[derive(Default)]
+struct Ownership {
+    /// Unix time at which this app asked for a daemon; the next daemon that reports a start time from then on is the one.
+    spawned_at: Option<u64>,
+    /// The pid of the daemon this app started.
+    pid: Option<u64>,
+}
+
+/// A request for a daemon (a password prompt, say) that nobody answers must not claim a daemon started later by somebody else.
+const SPAWN_CLAIM_SECS: u64 = 60;
+
+/// Update `own` with what the daemon reports (`None` = not running) and say whether that daemon is this app's own.
+fn track_owner(own: &mut Ownership, st: Option<&Value>, now: u64) -> bool {
+    if own.spawned_at.is_some_and(|t| now > t + SPAWN_CLAIM_SECS) {
+        own.spawned_at = None;
+    }
+    let Some(st) = st else {
+        own.pid = None;
+        return false;
+    };
+    let (pid, started) = (st["pid"].as_u64(), st["started"].as_u64().unwrap_or(0));
+    if own.pid.is_some() && own.pid != pid {
+        own.pid = None; // the daemon we started is gone and another one runs now
+    }
+    if own.pid.is_none() {
+        if let Some(t) = own.spawned_at {
+            if started + 2 >= t {
+                (own.pid, own.spawned_at) = (pid, None);
+            }
+        }
+    }
+    pid.is_some() && own.pid == pid
+}
+
+static OWNER: std::sync::Mutex<Ownership> = std::sync::Mutex::new(Ownership { spawned_at: None, pid: None });
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
 /// Start a daemon, unless one already answers: a second one would fight the first over its port and its devices.
 async fn ensure_daemon(privileged: bool) -> Result<(), Value> {
     if Client::connect_default().await.is_ok() {
         return Ok(());
     }
-    spawn_daemon(privileged)
+    spawn_daemon(privileged)?;
+    OWNER.lock().unwrap().spawned_at = Some(unix_now());
+    Ok(())
+}
+
+/// Ask the daemon to stop (it ejects what was imported and hands shared devices back), wait for it to be gone, then leave.
+async fn stop_daemon_and_exit(app: AppHandle) {
+    if let Ok(mut c) = Client::connect_default().await {
+        let _ = c.call("shutdown", json!({})).await;
+        for _ in 0..40 {
+            if Client::connect_default().await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -97,7 +155,7 @@ enum Look {
 }
 
 /// What the tray shows for a daemon state (`None` = the daemon is not running): the menu lines, which icon, and the tooltip.
-fn tray_view(st: Option<&Value>) -> (Vec<Item>, Look, String) {
+fn tray_view(st: Option<&Value>, owned: bool) -> (Vec<Item>, Look, String) {
     let mut items = Vec::new();
     let (look, tip) = match st {
         None => {
@@ -140,7 +198,22 @@ fn tray_view(st: Option<&Value>) -> (Vec<Item>, Look, String) {
     };
     items.push(Item::Separator);
     items.push(Item::Action("open".into(), "Open periwire".into()));
-    items.push(Item::Action("quit".into(), "Quit the app (the daemon keeps running)".into()));
+    match st {
+        None => items.push(Item::Action("quit".into(), "Quit".into())),
+        Some(st) => {
+            // Whoever started the daemon decides what Quit means: the app's own daemon goes with it, any other one stays up.
+            let busy = st["attachments"].as_array().map_or(0, |a| a.len()) + st["sessions"].as_array().map_or(0, |a| a.len());
+            let cost = if busy > 0 { format!(" (disconnects {busy} in use)") } else { String::new() };
+            let stop = Item::Action("quit-stop".into(), format!("Quit and stop the daemon{cost}"));
+            if owned {
+                items.push(stop);
+                items.push(Item::Action("quit".into(), "Quit and leave the daemon running".into()));
+            } else {
+                items.push(Item::Action("quit".into(), "Quit the app (the daemon keeps running)".into()));
+                items.push(stop);
+            }
+        }
+    }
     (items, look, tip)
 }
 
@@ -187,7 +260,8 @@ static SHOWN: std::sync::Mutex<Option<Shown>> = std::sync::Mutex::new(None);
 
 fn refresh_tray(app: &AppHandle, st: Option<&Value>) {
     let Some(tray) = app.tray_by_id("main") else { return };
-    let (items, look, tip) = tray_view(st);
+    let owned = track_owner(&mut OWNER.lock().unwrap(), st, unix_now());
+    let (items, look, tip) = tray_view(st, owned);
     let (menu, icon, tooltip) = {
         let mut g = SHOWN.lock().unwrap();
         changes(g.get_or_insert_with(Shown::default), &items, look, &tip)
@@ -316,7 +390,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![api, start_daemon])
         .setup(|app| {
             let handle = app.handle().clone();
-            let (items, _, _) = tray_view(None);
+            let (items, _, _) = tray_view(None, false);
             let menu = build_menu(&handle, &items)?;
             FOLLOW_DAEMON.store(std::env::args().any(|a| a == "--follow-daemon"), Ordering::Relaxed);
             let tray = TrayIconBuilder::with_id("main")
@@ -334,6 +408,9 @@ fn main() {
                     match id.as_str() {
                         "open" => show_main(app),
                         "quit" => app.exit(0),
+                        "quit-stop" => {
+                            tauri::async_runtime::spawn(stop_daemon_and_exit(app.clone()));
+                        }
                         "start" => {
                             tauri::async_runtime::spawn(async {
                                 let _ = ensure_daemon(false).await;
@@ -387,6 +464,10 @@ fn main() {
                 if TRAY_OK.load(Ordering::Relaxed) {
                     api.prevent_close();
                     let _ = w.hide();
+                } else if OWNER.lock().unwrap().pid.is_some() {
+                    // No tray to come back to: closing the window quits the app, and the daemon it started goes with it.
+                    api.prevent_close();
+                    tauri::async_runtime::spawn(stop_daemon_and_exit(w.app_handle().clone()));
                 }
             }
         })
@@ -420,7 +501,7 @@ mod tests {
     #[test]
     fn the_same_state_twice_changes_nothing() {
         let mut shown = Shown::default();
-        let (items, look, tip) = tray_view(Some(&status(1, 0)));
+        let (items, look, tip) = tray_view(Some(&status(1, 0)), false);
         assert_eq!(changes(&mut shown, &items, look, &tip), (true, true, true), "the first state is applied in full");
         for _ in 0..5 {
             assert_eq!(changes(&mut shown, &items, look, &tip), (false, false, false), "re-reading an unchanged daemon must not touch the tray (that was the flicker)");
@@ -430,26 +511,26 @@ mod tests {
     #[test]
     fn only_what_changed_is_touched() {
         let mut shown = Shown::default();
-        let (i0, l0, t0) = tray_view(Some(&status(0, 0)));
+        let (i0, l0, t0) = tray_view(Some(&status(0, 0)), false);
         changes(&mut shown, &i0, l0, &t0);
         // an attachment appears: menu, icon (idle -> active) and tooltip all change
-        let (i1, l1, t1) = tray_view(Some(&status(1, 0)));
+        let (i1, l1, t1) = tray_view(Some(&status(1, 0)), false);
         assert_eq!(changes(&mut shown, &i1, l1, &t1), (true, true, true));
         // a second one: the menu and tooltip change, the icon stays active
-        let (i2, l2, t2) = tray_view(Some(&status(2, 0)));
+        let (i2, l2, t2) = tray_view(Some(&status(2, 0)), false);
         assert_eq!(changes(&mut shown, &i2, l2, &t2), (true, false, true));
         // the daemon goes away: warning icon and the start menu
-        let (i3, l3, t3) = tray_view(None);
+        let (i3, l3, t3) = tray_view(None, false);
         assert_eq!(l3, Look::Warn);
         assert_eq!(changes(&mut shown, &i3, l3, &t3), (true, true, true));
     }
 
     #[test]
     fn the_menu_lists_what_can_be_ejected_or_disconnected() {
-        let (items, look, _) = tray_view(Some(&status(1, 1)));
+        let (items, look, _) = tray_view(Some(&status(1, 1)), false);
         assert_eq!(look, Look::Active);
         let ids: Vec<&str> = items.iter().filter_map(|i| if let Item::Action(id, _) = i { Some(id.as_str()) } else { None }).collect();
-        assert_eq!(ids, ["eject:0", "kick:0", "open", "quit"]);
+        assert_eq!(ids, ["eject:0", "kick:0", "open", "quit", "quit-stop"]);
         assert!(matches!(items[0], Item::Header(_)));
     }
 
@@ -457,7 +538,49 @@ mod tests {
     fn an_export_error_shows_the_warning_icon() {
         let mut st = status(0, 0);
         st["export"]["state"] = json!("error");
-        assert_eq!(tray_view(Some(&st)).1, Look::Warn);
-        assert_eq!(tray_view(Some(&status(0, 0))).1, Look::Idle);
+        assert_eq!(tray_view(Some(&st), false).1, Look::Warn);
+        assert_eq!(tray_view(Some(&status(0, 0)), false).1, Look::Idle);
+    }
+
+    fn label(items: &[Item], wanted: &str) -> String {
+        items.iter().find_map(|i| if let Item::Action(id, l) = i { (id == wanted).then(|| l.clone()) } else { None }).unwrap_or_default()
+    }
+
+    #[test]
+    fn quit_means_what_the_owner_of_the_daemon_would_expect() {
+        let st = status(1, 1);
+        let (other, _, _) = tray_view(Some(&st), false);
+        assert_eq!(label(&other, "quit"), "Quit the app (the daemon keeps running)", "somebody else's daemon stays up");
+        assert_eq!(label(&other, "quit-stop"), "Quit and stop the daemon (disconnects 2 in use)", "and says what stopping it costs");
+        let (mine, _, _) = tray_view(Some(&st), true);
+        let first_quit = mine.iter().find_map(|i| if let Item::Action(id, _) = i { id.starts_with("quit").then(|| id.clone()) } else { None });
+        assert_eq!(first_quit.as_deref(), Some("quit-stop"), "the app's own daemon is what a plain quit takes down");
+        assert_eq!(label(&mine, "quit"), "Quit and leave the daemon running");
+        let (none, _, _) = tray_view(None, false);
+        assert_eq!(label(&none, "quit"), "Quit");
+        assert_eq!(label(&none, "quit-stop"), "", "nothing to stop");
+        assert_eq!(label(&tray_view(Some(&status(0, 0)), false).0, "quit-stop"), "Quit and stop the daemon");
+    }
+
+    #[test]
+    fn the_app_owns_the_daemon_it_started_and_no_other() {
+        let up = |pid: u64, started: u64| json!({"pid": pid, "started": started});
+        let mut own = Ownership::default();
+        // a daemon that was running before the app asked for one is not the app's
+        assert!(!track_owner(&mut own, Some(&up(10, 1000)), 1005));
+        own.spawned_at = Some(2000);
+        assert!(!track_owner(&mut own, Some(&up(10, 1000)), 2001), "still the old daemon");
+        assert!(track_owner(&mut own, Some(&up(11, 2001)), 2002), "the one that started after the request is the app's");
+        assert!(track_owner(&mut own, Some(&up(11, 2001)), 2100), "and stays so");
+        assert!(!track_owner(&mut own, None, 2200), "gone");
+        assert!(!track_owner(&mut own, Some(&up(12, 2250)), 2251), "a later daemon from a terminal is not the app's");
+    }
+
+    #[test]
+    fn an_unanswered_request_cannot_claim_a_daemon_started_later() {
+        let mut own = Ownership { spawned_at: Some(3000), pid: None };
+        // the password prompt was cancelled; a terminal daemon starts minutes later
+        assert!(!track_owner(&mut own, Some(&json!({"pid": 20, "started": 3200})), 3200));
+        assert_eq!(own.spawned_at, None);
     }
 }

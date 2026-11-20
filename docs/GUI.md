@@ -30,7 +30,7 @@ is closed and the app can be restarted any time.
   <img src="img/health-light.webp" alt="Health page" width="370"> <img src="img/activity-dark.webp" alt="Activity page" width="370">
 - **Tray** — icon turns green while anything is connected and amber when the daemon is down; the menu lists imported
   devices with one-click *Eject*, shared devices in use with *Disconnect*, and *Start daemon* when it is not running.
-  Closing the window hides it to the tray; *Quit* in the tray menu exits.
+  Closing the window hides it to the tray; the tray menu quits (see *Quitting* below).
 - The icon shows whenever a daemon runs, however it was started (see *The taskbar icon follows the daemon* below). Closing the window hides the app to the icon.
 - If the daemon is not running the app offers *Start daemon* (and, on Linux, *Start with admin rights* via `pkexec`).
 - Keyboard: `1`–`6` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
@@ -56,6 +56,13 @@ again when that daemon stops unless you opened the window. The app allows one in
 system service has no desktop of its own: `sudo periwire service install` also adds an autostart entry (`/etc/xdg/autostart/periwire-tray.desktop`)
 that shows the icon at login. Turn it off with `periwire daemon --no-tray` or `PERIWIRE_NO_TRAY=1`. Closing the window hides it to the
 icon; the icon's menu has *Open* and *Quit the app* (the daemon keeps running). On a desktop without a tray the window simply closes the app.
+
+**Quitting.** Whoever started the daemon decides what happens to it. A daemon this app started (*Start daemon* in the window or the tray)
+belongs to the app: the tray's first quit entry is *Quit and stop the daemon*, which asks it to stop (it ejects what was imported and hands
+shared devices back) before the app leaves, and says how many devices in use that disconnects. A daemon started from a terminal, as a service
+or by an AI assistant belongs to that; *Quit the app (the daemon keeps running)* is the first entry and *Quit and stop the daemon* is there
+when you want it. Closing the window never stops anything, it only hides the app. On a desktop with no tray, closing the window quits the
+app and stops a daemon the app started.
 
 **Finding the app again.** Installing is enough; nobody has to run a command first:
 - Linux `.deb`: a launcher entry (*PeriWire*, searchable by "usb", "network", "ipad"…) and icons in all sizes go in the system menu.
