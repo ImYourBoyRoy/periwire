@@ -10,7 +10,7 @@ pub(crate) fn driver_cmd(_: DriverCmd, _json: bool) -> Result<i32> {
 
 #[cfg(windows)]
 pub(crate) fn driver_cmd(dc: DriverCmd, json: bool) -> Result<i32> {
-    use crate::windrv;
+    use crate::{cli, ui, windrv};
     let print_status = |st: &windrv::Status| {
         if json {
             cli::print_json(&serde_json::to_value(st).unwrap_or_default());

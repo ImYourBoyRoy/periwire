@@ -208,7 +208,7 @@ mod tests {
         let done_tx = Mutex::new(done_tx);
         // The first job of each endpoint is the slowest: without ordering the later ones would finish first.
         let run: Arc<dyn Fn((u8, u32)) + Send + Sync> = Arc::new(move |(ep, n)| {
-            std::thread::sleep(Duration::from_millis(if n == 0 { 120 } else { 5 }));
+            std::thread::sleep(Duration::from_millis(if n == 0 { 250 } else { 150 })); // generous: the two endpoints must start within 150 ms of each other, however loaded the machine
             done_tx.lock().unwrap().send((ep, n)).unwrap();
         });
         let mut o: Ordered<u8, (u8, u32)> = Ordered::new(run);
