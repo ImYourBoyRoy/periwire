@@ -50,6 +50,11 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 
 ## Not verified yet
 
+- A sustained large push (100-200 MB) to an iPad on a **USB 3 (10 Gbps) port**: in three runs the iPad dropped off the host's USB bus after about 35 s
+  (kernel: `usb_submit_urb returned -19`, xHCI `Set TR Deq Ptr` warning), also with the exporter from before the 2026-11-20 review changes, and a
+  longer bulk poll step changed nothing. The same push passed on a USB 2 port on 2026-11-12, and a 20 MB round trip passed hash-identical on the USB 3 port.
+  Cause not established (port, cable or iPad state); try another port or a USB 2 hub first. The exporter and importer recovered from every drop by themselves.
+
 - An actual Xcode build and run to the iPad through the importer (signing identities do not belong in a throwaway guest), `xctrace record`
   against iPadOS 27 (Instruments in Xcode 26.6 does not support it; `devicectl` is fine), iPad sleep and wake.
 - The GUI "Read-only for others" switch against a real importer, and the GUI inside the real Tauri window (including the one-click driver install on Windows).
