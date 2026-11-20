@@ -115,6 +115,7 @@ impl UrbClient {
                     match basic.command {
                         USBIP_RET_SUBMIT => {
                             let r = RetSubmit::decode(&hdr)?;
+                            r.validate()?; // a corrupt or hostile exporter must not choose how much we allocate
                             if a2.lock().unwrap().ret(basic.seqnum) {
                                 continue; // a command block the caller was told about already (it has no payload)
                             }

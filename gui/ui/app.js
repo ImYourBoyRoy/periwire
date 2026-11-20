@@ -117,7 +117,7 @@ function spark(svg, data, color = "var(--accent)") {
 }
 
 // ------------------------------------------------------------------ state
-const S = { status: null, devices: [], connected: false, view: "overview", rates: new Map(), hist: Array(40).fill(0), logs: [], remote: { addr: "", list: null, error: null, loading: false, forAddr: "" }, doctor: null, doctorLoading: false, autoOn: true, roOn: false, busy: new Set() };
+const S = { status: null, devices: [], connected: null, view: "overview", rates: new Map(), hist: Array(40).fill(0), logs: [], remote: { addr: "", list: null, error: null, loading: false, forAddr: "" }, doctor: null, doctorLoading: false, autoOn: true, roOn: false, busy: new Set() };
 const VIEWS = [
   { id: "overview", label: "Overview", icon: "grid", sub: "Everything that is connected, live." },
   { id: "share", label: "Share", icon: "share", sub: "USB devices on this computer. Switch one on to let trusted computers use it." },
@@ -229,14 +229,16 @@ async function act(key, fn, okMsg) {
 async function refresh() { try { S.status = await call("status"); S.devices = await call("devices"); } catch {} renderAll(); }
 
 // ------------------------------------------------------------------ actions
-const specFor = (d) => { const have = (S.status?.shares || []).map((s) => s.spec.toLowerCase()); return have.includes(d.busid) ? d.busid : `${d.vid}:${d.pid}`; };
+// Identical devices (two sticks of one model) share a vid:pid, so a vid:pid spec would switch both at once: use the port for those.
+const shareSpec = (d) => (S.devices.filter((x) => x.vid === d.vid && x.pid === d.pid).length > 1 ? d.busid : `${d.vid}:${d.pid}`);
+const specFor = (d) => { const have = (S.status?.shares || []).map((s) => s.spec.toLowerCase()); return have.includes(d.busid) ? d.busid : shareSpec(d); };
 async function toggleShare(d) {
   if (d.shared && d.in_use_by) {
     const ok = await modal({ title: `Stop sharing ${devName(d)}?`, body: `<b>${esc(d.in_use_by)}</b> is using it right now. It will be disconnected immediately and the device returns to this computer. Unsaved work on that computer may be lost.`, actions: [{ label: "Keep sharing", value: false }, { label: "Disconnect & stop", value: true, kind: "danger" }] });
     if (!ok) return;
   }
   if (!d.shared && d.mounted?.length) toast(`${devName(d)} is mounted on this computer. Another computer can only take it after you eject it here.`, "info", 7000);
-  await act("share:" + d.busid, () => call(d.shared ? "share.remove" : "share.add", { spec: d.shared ? specFor(d) : `${d.vid}:${d.pid}` }), d.shared ? "Stopped sharing" : "Now shared with trusted computers");
+  await act("share:" + d.busid, () => call(d.shared ? "share.remove" : "share.add", { spec: d.shared ? specFor(d) : shareSpec(d) }), d.shared ? "Stopped sharing" : "Now shared with trusted computers");
 }
 // Owner-side read-only: every computer that imports this drive gets it write-protected. Changing it disconnects a current user.
 async function toggleShareRO(d) {
@@ -267,9 +269,12 @@ async function kick(s) {
 }
 async function browse(addr) {
   addr = (addr || "").trim(); if (!addr) return;
+  const mine = (S.remote.seq = (S.remote.seq || 0) + 1); // a slow answer for an earlier address must not replace the list for this one
   Object.assign(S.remote, { addr, loading: true, error: null, list: null, forAddr: addr }); renderConnect();
-  try { S.remote.list = await call("remote.list", { addr }); } catch (e) { S.remote.error = e.message; }
-  S.remote.loading = false; renderConnect();
+  let list = null, error = null;
+  try { list = await call("remote.list", { addr }); } catch (e) { error = e.message; }
+  if (mine !== S.remote.seq) return;
+  Object.assign(S.remote, { list, error, loading: false }); renderConnect();
 }
 async function attach(addr, busid, auto, name, read_only) {
   const key = `attach:${addr}:${busid}`;
@@ -553,7 +558,7 @@ function renderConnect() {
     e._c = c; setText($(".t", e), (c.name || c.busid)); setText($(".sub", e), `${c.busid} from ${c.addr}`);
     const ch = $(".auto", e); ch.className = `chip auto ${c.auto ? "ok" : ""}`; setText(ch, c.auto ? "auto-attach" : "manual");
     const live = st.attachments.some((a) => a.addr === c.addr && a.busid === c.busid); const b = $(".go", e); b.disabled = live; setHTML(b, live ? "Attached" : `${ic("connect")} Attach`);
-    b.onclick = () => attach(e._c.addr, e._c.busid, e._c.auto, e._c.name); $(".del", e).onclick = () => act("forget", () => call("connection.remove", { addr: e._c.addr, busid: e._c.busid }), "Forgotten");
+    b.onclick = () => attach(e._c.addr, e._c.busid, e._c.auto, e._c.name, e._c.read_only); $(".del", e).onclick = () => act("forget", () => call("connection.remove", { addr: e._c.addr, busid: e._c.busid }), "Forgotten");
   });
   [["att-list", st.attachments.length, "Nothing attached", "Browse a computer above and attach one of its devices."], ["mem-list", mem.length, "Nothing remembered", "Attach a device with “Reconnect automatically” and it will appear here."]].forEach(([id, n, t, s]) => { const box = $("#" + id), emp = box.querySelector(".empty-card"); if (!n && !emp) box.append(h("div", { class: "empty-card", html: `<b>${t}</b>${s}` })); else if (n && emp) emp.remove(); });
 }
@@ -627,11 +632,11 @@ function renderNav() {
 }
 function renderChrome() {
   const st = S.status; const dot = $("#daemon-dot");
-  dot.className = "dot " + (!S.connected ? "bad" : st && st.export.state === "error" ? "warn" : "ok");
-  setText($("#daemon-title"), S.connected ? "Daemon running" : "Daemon offline");
+  dot.className = "dot " + (S.connected === false ? "bad" : S.connected === null ? "warn" : st && st.export.state === "error" ? "warn" : "ok");
+  setText($("#daemon-title"), S.connected ? "Daemon running" : S.connected === null ? "Connecting…" : "Daemon offline");
   setText($("#daemon-sub"), S.connected && st ? `${st.hostname} · up ${dur(st.uptime)}` : "not reachable");
-  const off = $("#offline"); off.classList.toggle("show", !S.connected);
-  if (!S.connected && !off.firstChild) {
+  const off = $("#offline"); off.classList.toggle("show", S.connected === false); // not while the first answer is still on its way
+  if (S.connected === false && !off.firstChild) {
     off.append(h("div", { class: "box" }, h("div", { class: "big", html: ic("plug") }), h("h2", {}, "The periwire daemon isn't running"), h("p", {}, "This app is the control panel; the daemon does the work. Start it to share and use devices."),
       h("div", { class: "row", style: "justify-content:center" }, h("button", { class: "btn primary", onclick: () => startDaemon(false).then(() => toast("Starting…", "info", 2500), (e) => toast(e.message, "bad", 7000)) }, "Start daemon"), h("button", { class: "btn", onclick: () => startDaemon(true).then(() => toast("Waiting for authorisation…", "info", 3000), (e) => toast(e.message, "bad", 7000)) }, "Start with admin rights")),
       h("p", { class: "faint", style: "margin:14px 0 0;font-size:12.5px" }, "Admin rights are needed to import devices on Linux. For an always-on setup, install the service:"), h("code", {}, "sudo periwire service install")));
@@ -648,7 +653,7 @@ function renderAll() {
 // desktop app announces it only once. A status update proves the daemon is there, so it counts as the announcement too.
 async function setConnected(c) {
   const was = S.connected; S.connected = c; renderActions();
-  if (c && !was) { await refresh(); try { (await call("logs", { lines: 200 })).forEach(addLog); } catch {} }
+  if (c && !was) { const lb = $("#logbox"); if (lb) lb.textContent = ""; await refresh(); try { (await call("logs", { lines: 200 })).forEach(addLog); } catch {} }
   renderChrome();
 }
 on("status", (st) => { S.status = st; updateRates(st); if (!S.connected) setConnected(true); renderAll(); });
@@ -658,7 +663,7 @@ on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);
 if (demo) { document.body.classList.add("demo"); document.body.append(h("div", { class: "demo-banner" }, "Demo mode — simulated devices")); }
 start();
-if (!demo) call("status").then(() => setConnected(true), () => {}); // ask once at start; do not wait for the first announcement
+if (!demo) call("status").then(() => setConnected(true), () => { if (S.connected === null) setConnected(false); }); // ask once at start; do not wait for the first announcement
 go(location.hash.slice(1) && VIEWS.some((v) => v.id === location.hash.slice(1)) ? location.hash.slice(1) : "overview");
 let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { topoSig = ""; renderAll(); const i = VIEWS.findIndex((x) => x.id === S.view); const b = nav.children[i + 1]; if (b) pill.style.transform = `translateY(${b.offsetTop}px)`; }, 120); });
 

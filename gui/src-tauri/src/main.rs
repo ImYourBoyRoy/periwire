@@ -24,8 +24,36 @@ fn err(code: &str, message: String) -> Value {
 }
 
 /// Call a daemon method. A fresh connection per call keeps this trivially robust across daemon restarts.
+/// The daemon methods the window may call. Everything else (stopping the daemon, uninstalling the driver, raw API access) stays with the CLI,
+/// so a page that somehow ran foreign script could not do more than its own buttons can.
+const PAGE_METHODS: &[&str] = &[
+    "status",
+    "devices",
+    "doctor",
+    "logs",
+    "remote.list",
+    "share.add",
+    "share.remove",
+    "attach",
+    "detach",
+    "kick",
+    "trust.add",
+    "trust.probe",
+    "trust.remove",
+    "connection.remove",
+    "device.label",
+    "export.set",
+    "identity.reset",
+    "driver.status",
+    "driver.install",
+    "subscribe",
+];
+
 #[tauri::command]
 async fn api(method: String, params: Option<Value>) -> Result<Value, Value> {
+    if !PAGE_METHODS.contains(&method.as_str()) {
+        return Err(err("denied", format!("the window may not call `{method}`; use the periwire command line")));
+    }
     let mut c = Client::connect_default().await.map_err(|e| err("not_running", e.to_string()))?;
     c.call(&method, params.unwrap_or(json!({}))).await.map_err(|e| err(&e.code, e.message))
 }
@@ -423,7 +451,7 @@ fn main() {
                         }
                         _ => {
                             if let Some((kind, n)) = id.split_once(':') {
-                                let n = n.parse::<u64>().unwrap_or(0);
+                                let Ok(n) = n.parse::<u64>() else { return };
                                 let (method, params) = match kind {
                                     "eject" => ("detach", json!({"id": n})),
                                     "kick" => ("kick", json!({"session": n})),

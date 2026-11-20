@@ -74,6 +74,8 @@ pub enum ProtoError {
     Version(u16),
     #[error("unexpected command {0:#x}")]
     Command(u32),
+    #[error("{what} {value} is outside 0..={max}")]
+    OutOfRange { what: &'static str, value: i64, max: i64 },
 }
 
 fn need(buf: &[u8], n: usize) -> Result<(), ProtoError> {
@@ -241,6 +243,36 @@ pub struct RetSubmit {
     pub start_frame: i32,
     pub number_of_packets: i32,
     pub error_count: i32,
+}
+
+/// Largest data stage of one transfer either side will buffer. Without a bound a peer could make us allocate gigabytes with one header.
+pub const MAX_URB_BYTES: i32 = 16 * 1024 * 1024;
+/// Most isochronous packet descriptors one transfer may carry.
+pub const MAX_ISO_PACKETS: i32 = 4096;
+
+fn in_range(what: &'static str, value: i32, max: i32) -> Result<(), ProtoError> {
+    if (0..=max).contains(&value) {
+        Ok(())
+    } else {
+        Err(ProtoError::OutOfRange { what, value: value.into(), max: max.into() })
+    }
+}
+
+impl CmdSubmit {
+    /// Reject lengths and packet counts no honest peer sends, before anything is allocated for them.
+    pub fn validate(&self) -> Result<(), ProtoError> {
+        in_range("endpoint number", i32::try_from(self.basic.ep).unwrap_or(i32::MAX), 15)?;
+        in_range("URB length", self.transfer_buffer_length, MAX_URB_BYTES)?;
+        in_range("isochronous packet count", self.number_of_packets, MAX_ISO_PACKETS)
+    }
+}
+
+impl RetSubmit {
+    /// Same for a reply: the length it announces and the packet descriptors that would follow it.
+    pub fn validate(&self) -> Result<(), ProtoError> {
+        in_range("reply length", self.actual_length, MAX_URB_BYTES)?;
+        in_range("isochronous packet count", self.number_of_packets, MAX_ISO_PACKETS)
+    }
 }
 
 fn put_basic(out: &mut Vec<u8>, b: &UrbBasic) {
@@ -433,5 +465,51 @@ mod tests {
         }
         let m = OpHeader::decode(&encode_flags_request(FLAG_READ_ONLY | FLAG_RESUME)[..8]).unwrap();
         assert_eq!(m.code, OP_REQ_FLAGS);
+    }
+
+    #[test]
+    fn sizes_and_counts_no_honest_peer_sends_are_rejected_before_allocation() {
+        let mut c = CmdSubmit {
+            basic: UrbBasic { command: USBIP_CMD_SUBMIT, seqnum: 1, devid: 0, direction: DIR_OUT, ep: 1 },
+            transfer_flags: 0,
+            transfer_buffer_length: 4096,
+            start_frame: 0,
+            number_of_packets: 0,
+            interval: 0,
+            setup: [0; 8],
+        };
+        assert!(c.validate().is_ok());
+        c.transfer_buffer_length = MAX_URB_BYTES;
+        assert!(c.validate().is_ok(), "the largest allowed transfer");
+        for bad in [-1, MAX_URB_BYTES + 1, i32::MAX] {
+            c.transfer_buffer_length = bad;
+            assert!(c.validate().is_err(), "length {bad}");
+        }
+        c.transfer_buffer_length = 0;
+        for bad in [-1, MAX_ISO_PACKETS + 1, i32::MAX] {
+            c.number_of_packets = bad;
+            assert!(c.validate().is_err(), "packets {bad}");
+        }
+        c.number_of_packets = 0;
+        c.basic.ep = 16;
+        assert!(c.validate().is_err(), "no such endpoint number");
+        c.basic.ep = 0x100;
+        assert!(c.validate().is_err(), "the endpoint number must not be truncated to 0");
+    }
+
+    #[test]
+    fn a_reply_may_not_announce_more_than_a_transfer_can_hold() {
+        let r = |len, np| RetSubmit {
+            basic: UrbBasic { command: USBIP_RET_SUBMIT, seqnum: 1, devid: 0, direction: 0, ep: 0 },
+            status: 0,
+            actual_length: len,
+            start_frame: 0,
+            number_of_packets: np,
+            error_count: 0,
+        };
+        assert!(r(MAX_URB_BYTES, 0).validate().is_ok());
+        assert!(r(MAX_URB_BYTES + 1, 0).validate().is_err());
+        assert!(r(-5, 0).validate().is_err());
+        assert!(r(0, MAX_ISO_PACKETS + 1).validate().is_err());
     }
 }

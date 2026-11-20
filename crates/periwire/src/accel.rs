@@ -27,7 +27,6 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc::unbounded_channel;
 use usbip_proto::*;
-pub const MAX_URB_BYTES: i32 = 16 * 1024 * 1024;
 
 /// What to do with a URB the host's USB stack just submitted.
 #[derive(Debug, PartialEq)]
@@ -294,10 +293,8 @@ where
             match basic.command {
                 USBIP_CMD_SUBMIT => {
                     let c = CmdSubmit::decode(&h).map_err(std::io::Error::other)?;
+                    c.validate().map_err(std::io::Error::other)?;
                     let len = c.transfer_buffer_length;
-                    if !(0..=MAX_URB_BYTES).contains(&len) || c.number_of_packets > 4096 {
-                        return Err(std::io::Error::other(format!("URB length {len} out of range")));
-                    }
                     let is_in = c.basic.direction == DIR_IN;
                     let mut m = h.to_vec();
                     if !is_in && len > 0 {
@@ -362,10 +359,8 @@ where
                     };
                     let inf = inf.ok_or_else(|| std::io::Error::other(format!("reply for unknown URB {seq}")))?;
                     let mut body = vec![];
-                    let n = if inf.is_in && r.status == 0 { r.actual_length.max(0) as usize } else { 0 };
-                    if n > MAX_URB_BYTES as usize {
-                        return Err(std::io::Error::other("reply too large"));
-                    }
+                    r.validate().map_err(std::io::Error::other)?;
+                    let n = if inf.is_in && r.status == 0 { r.actual_length as usize } else { 0 };
                     body.resize(n, 0);
                     rr.read_exact(&mut body).await?;
                     let mark = csw_mark_ep(&h);

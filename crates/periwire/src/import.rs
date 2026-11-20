@@ -250,9 +250,16 @@ pub mod vhci {
         if mounts.is_empty() {
             return Ok(vec![]);
         }
-        unsafe { libc::sync() };
         let mut done = vec![];
-        for (_dev, mp) in mounts {
+        // Innermost first: a mount nested inside another has to go before its parent.
+        for (_dev, mp) in mounts.into_iter().rev() {
+            if !force {
+                // Flush just this filesystem. (A global `sync()` would also wait on a dead link's dirty pages, and a forced eject must not wait at all.)
+                if let Ok(f) = std::fs::File::open(&mp) {
+                    use std::os::fd::AsRawFd;
+                    unsafe { libc::syncfs(f.as_raw_fd()) };
+                }
+            }
             let c = std::ffi::CString::new(mp.clone())?;
             let mut r = unsafe { libc::umount2(c.as_ptr(), 0) };
             if r != 0 && force {

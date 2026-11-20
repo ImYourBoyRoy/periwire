@@ -156,6 +156,7 @@ fn hint(code: &str) -> &'static str {
     match code {
         "not_running" => " Start the daemon with `periwire daemon` (as root on Linux for importing) or install it with `periwire service install`.",
         "denied" => " The daemon's control socket belongs to another user; run it with `--socket-group` or use sudo.",
+        "needs_confirmation" => " Ask the user, and only call again with confirmed_by_user=true after they have said yes.",
         "unsupported" => " Run periwire_doctor for details.",
         _ => "",
     }
@@ -221,7 +222,7 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
         "periwire_trust_probe" => b.call("trust.probe", json!({"addr": g("addr")})).await.map_err(e2),
         "periwire_trust_add" => {
             if a.get("confirmed_by_user").and_then(Value::as_bool) != Some(true) {
-                return Err(("denied".into(), "refusing to trust a computer without the user's confirmation: show the fingerprint to the user, have them compare it with `periwire id` on the other computer, then call again with confirmed_by_user=true".into()));
+                return Err(("needs_confirmation".into(), "refusing to trust a computer without the user's confirmation: show the fingerprint to the user, have them compare it with `periwire id` on the other computer, then call again with confirmed_by_user=true".into()));
             }
             b.call("trust.add", json!({"fingerprint": g("fingerprint"), "name": a.get("name").cloned().unwrap_or(json!("peer"))})).await.map_err(e2)
         }
@@ -230,14 +231,14 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
         "periwire_label_device" => b.call("device.label", json!({"key": g("key"), "label": g("label")})).await.map_err(e2),
         "periwire_reset_identity" => {
             if a.get("confirmed_by_user").and_then(Value::as_bool) != Some(true) {
-                return Err(("denied".into(), "refusing to reset the identity without the user's explicit confirmation".into()));
+                return Err(("needs_confirmation".into(), "refusing to reset the identity without the user's explicit confirmation".into()));
             }
             b.call("identity.reset", json!({"confirm": true})).await.map_err(e2)
         }
         "periwire_driver_status" => b.call("driver.status", json!({})).await.map_err(e2),
         "periwire_driver_install" => {
             if a.get("confirmed_by_user").and_then(Value::as_bool) != Some(true) {
-                return Err(("denied".into(), "refusing to install a kernel driver without the user's explicit confirmation".into()));
+                return Err(("needs_confirmation".into(), "refusing to install a kernel driver without the user's explicit confirmation".into()));
             }
             b.call("driver.install", json!({"confirm": true})).await.map_err(e2)
         }

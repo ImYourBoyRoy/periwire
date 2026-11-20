@@ -109,6 +109,18 @@ impl Shared {
             None => false,
         }
     }
+    /// Kick every session on the device a spec (busid or vid:pid) names; the lock is taken once, so callers may not hold it.
+    pub fn kick_matching(&self, spec: &str) -> usize {
+        let mut n = 0;
+        for s in self.sessions.lock().unwrap().values() {
+            let dev = format!("{:04x}:{:04x}", s.vid, s.pid);
+            if spec == s.busid || spec.eq_ignore_ascii_case(&dev) {
+                let _ = s.kick.send(true);
+                n += 1;
+            }
+        }
+        n
+    }
     pub fn kick_busid(&self, busid: &str) -> usize {
         let g = self.sessions.lock().unwrap();
         let mut n = 0;
@@ -133,7 +145,7 @@ impl Shared {
     }
 }
 
-use crate::accel::{Seq, Step, MAX_URB_BYTES};
+use crate::accel::{Seq, Step};
 // Linux errno values carried in RET_SUBMIT status (negated).
 const EPIPE: i32 = -32;
 const ENODEV: i32 = -19;
@@ -419,14 +431,86 @@ pub fn mounts_for(busid: &str) -> Vec<(String, String)> {
             }
         }
     }
-    let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
+    let names = with_holders(names);
+    matching_mounts(&std::fs::read_to_string("/proc/self/mounts").or_else(|_| std::fs::read_to_string("/proc/mounts")).unwrap_or_default(), &names)
+}
+
+/// Block devices stacked on top of these (LUKS, LVM and other device-mapper layers), by their `dm-N` and `mapper/<name>` spellings.
+#[cfg(target_os = "linux")]
+fn with_holders(names: Vec<String>) -> Vec<String> {
+    let mut all = names.clone();
+    let mut todo: Vec<String> = names;
+    let mut seen = 0;
+    while let Some(n) = todo.pop() {
+        seen += 1;
+        if seen > 64 {
+            break;
+        }
+        let mut dirs = vec![std::path::PathBuf::from(format!("/sys/class/block/{n}/holders"))];
+        // the partitions of a disk (sdb1, nvme0n1p1) list their own holders
+        if let Ok(rd) = std::fs::read_dir(format!("/sys/class/block/{n}")) {
+            dirs.extend(rd.flatten().filter(|e| e.file_name().to_string_lossy().starts_with(&n)).map(|e| e.path().join("holders")));
+        }
+        for d in dirs {
+            let Ok(rd) = std::fs::read_dir(d) else { continue };
+            for h in rd.flatten() {
+                let dm = h.file_name().to_string_lossy().into_owned();
+                if all.contains(&dm) {
+                    continue;
+                }
+                if let Ok(name) = std::fs::read_to_string(format!("/sys/class/block/{dm}/dm/name")) {
+                    all.push(format!("mapper/{}", name.trim()));
+                }
+                all.push(dm.clone());
+                todo.push(dm);
+            }
+        }
+    }
+    all
+}
+
+/// `/proc/mounts` escapes a space, tab, newline or backslash in a field as a three-digit octal sequence (`My\040Drive`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn unescape_mount_field(f: &str) -> String {
+    let b = f.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 3 < b.len() && b[i + 1..=i + 3].iter().all(|c| (b'0'..=b'7').contains(c)) {
+            out.push(((b[i + 1] - b'0') << 6) | ((b[i + 2] - b'0') << 3) | (b[i + 3] - b'0'));
+            i += 4;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Is `base` (a name under /dev) one of `names`, or a partition of it (`sdb` -> `sdb1`, `nvme0n1` -> `nvme0n1p1`)? `sdb` is not `sdba1`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn is_name_or_partition(base: &str, names: &[String]) -> bool {
+    names.iter().any(|n| match base.strip_prefix(n.as_str()) {
+        Some("") => true,
+        Some(rest) => {
+            // a name that ends in a digit takes `p` before the partition number (nvme0n1p1); one that does not takes the number directly (sdb1)
+            let digits = if n.ends_with(|c: char| c.is_ascii_digit()) { rest.strip_prefix('p') } else { Some(rest) };
+            digits.is_some_and(|d| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit()))
+        }
+        None => false,
+    })
+}
+
+/// (device, mount point) of every mount whose device is one of `names` or a partition of one; spaces in names are restored.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn matching_mounts(mounts: &str, names: &[String]) -> Vec<(String, String)> {
     mounts
         .lines()
         .filter_map(|l| {
-            let mut f = l.split_whitespace();
-            let (dev, mp) = (f.next()?, f.next()?);
+            let mut f = l.split(' ');
+            let (dev, mp) = (unescape_mount_field(f.next()?), unescape_mount_field(f.next()?));
             let base = dev.strip_prefix("/dev/")?;
-            names.iter().any(|n| base.starts_with(n.as_str())).then(|| (dev.to_string(), mp.to_string()))
+            is_name_or_partition(base, names).then(|| (dev.clone(), mp))
         })
         .collect()
 }
@@ -471,7 +555,8 @@ struct Dev {
     h: DeviceHandle<Context>,
     dev: Device<Context>,
     claimed: Vec<u8>,
-    eps: HashMap<u8, TransferType>,
+    /// Endpoint address -> (transfer type, max packet size).
+    eps: HashMap<u8, (TransferType, usize)>,
     /// The mass-storage Bulk-Only interface, if any (used for reset recovery).
     bot: Option<Bot>,
     /// Set by every bulk transfer; cleared by recovery. A device-descriptor read while set means the importer re-enumerated.
@@ -555,7 +640,7 @@ impl Dev {
         for i in cfg.interfaces() {
             for alt in i.descriptors() {
                 for ep in alt.endpoint_descriptors() {
-                    self.eps.entry(ep.address()).or_insert(ep.transfer_type());
+                    self.eps.entry(ep.address()).or_insert((ep.transfer_type(), (ep.max_packet_size() as usize & 0x7ff).max(1)));
                 }
                 if self.bot.is_none() && alt.class_code() == 0x08 && alt.sub_class_code() == 0x06 && alt.protocol_code() == 0x50 {
                     let bulk = |d: rusb::Direction| alt.endpoint_descriptors().find(|e| e.transfer_type() == TransferType::Bulk && e.direction() == d).map(|e| e.address());
@@ -721,26 +806,36 @@ fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &AtomicBool) 
         };
     }
     let addr = (c.basic.ep as u8) | if is_in { 0x80 } else { 0x00 };
-    let ttype = {
+    let (ttype, mps) = {
         let g = dev.read().unwrap();
         g.dirty.store(true, Ordering::Relaxed);
-        g.eps.get(&addr).copied().unwrap_or(TransferType::Bulk)
+        g.eps.get(&addr).copied().unwrap_or((TransferType::Bulk, 512))
     };
     if is_in {
         let mut buf = vec![0u8; len];
         let step = if ttype == TransferType::Interrupt { Duration::from_millis(100) } else { Duration::from_millis(1000) };
+        let mut got = 0;
         loop {
             if cancel.load(Ordering::Relaxed) {
                 return (ECONNRESET, vec![]);
             }
             let g = dev.read().unwrap();
-            let r = if ttype == TransferType::Interrupt { g.h.read_interrupt(addr, &mut buf, step) } else { g.h.read_bulk(addr, &mut buf, step) };
+            let began = std::time::Instant::now();
+            let r = if ttype == TransferType::Interrupt { g.h.read_interrupt(addr, &mut buf[got..], step) } else { g.h.read_bulk(addr, &mut buf[got..], step) };
             drop(g);
             match r {
                 Ok(n) => {
-                    buf.truncate(n);
+                    got += n;
+                    // libusb reports bytes received before a timeout as a success. A transfer that took the whole step, is not full and
+                    // ended on a whole packet was cut off mid-flight (a slow flash drive pausing), not finished: a real short transfer
+                    // ends on a packet smaller than the endpoint's. Keep reading, or the rest would be taken for the next command's data.
+                    if got < len && n > 0 && n % mps == 0 && began.elapsed() >= step {
+                        continue;
+                    }
+                    buf.truncate(got);
                     return (0, buf);
                 }
+                Err(rusb::Error::Timeout) if got > 0 => continue,
                 Err(rusb::Error::Timeout) => continue,
                 Err(e) => return (dev.read().unwrap().err(e), vec![]), // `g` was dropped before the transfer result was looked at
             }
@@ -794,7 +889,15 @@ pub async fn serve(shared: Arc<Shared>, listener: TcpListener, mut stop: watch::
     let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
     loop {
         let (tcp, peer) = tokio::select! {
-            r = listener.accept() => r?,
+            r = listener.accept() => match r {
+                Ok(c) => c,
+                Err(e) => {
+                    // Running out of file descriptors or a connection reset while queued is not a reason to stop sharing.
+                    crate::logln!("accepting a connection failed ({e}); trying again shortly");
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+            },
             _ = stop.changed() => break,
         };
         let _ = tcp.set_nodelay(true);
@@ -1445,10 +1548,8 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
             match basic.command {
                 USBIP_CMD_SUBMIT => {
                     let c = CmdSubmit::decode(&h)?;
+                    c.validate()?; // before anything is allocated for what the header announces
                     let len = c.transfer_buffer_length;
-                    if !(0..=MAX_URB_BYTES).contains(&len) {
-                        bail!("URB length {len} out of range");
-                    }
                     let mut out = vec![];
                     if c.basic.direction == DIR_OUT && len > 0 {
                         out = vec![0u8; len as usize];
@@ -1542,7 +1643,8 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
     }
     drop(bot_q); // ends the storage worker once it has drained
     drop(ordered); // and the endpoint workers
-                   // Wait for in-flight workers so the device is really free before we report it.
+    drop(run); // the closure holds a handle on the device too: without this the count below never reaches 1
+               // Wait for in-flight workers so the device is really free before we report it.
     for _ in 0..100 {
         if Arc::strong_count(&dev) == 1 {
             break;
@@ -1559,6 +1661,17 @@ async fn urb_loop<R: AsyncReadExt + Unpin>(
 mod tests {
     use super::*;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn mount_points_with_spaces_are_restored_and_names_match_exactly() {
+        let names = vec!["sdb".to_string(), "mapper/luks-1".to_string(), "dm-0".to_string(), "nvme1n1".to_string()];
+        let table = "/dev/sdb1 /media/u/My\\040Drive vfat rw 0 0\n/dev/sdba1 /mnt/other ext4 rw 0 0\n/dev/sdb /mnt/whole ext4 rw 0 0\n\
+                     /dev/mapper/luks-1 /mnt/secret ext4 rw 0 0\n/dev/nvme1n1p2 /mnt/nv ext4 rw 0 0\n/dev/nvme1n10 /mnt/x ext4 rw 0 0\ntmpfs /run tmpfs rw 0 0\n";
+        let got: Vec<String> = matching_mounts(table, &names).into_iter().map(|(_, m)| m).collect();
+        assert_eq!(got, ["/media/u/My Drive", "/mnt/whole", "/mnt/secret", "/mnt/nv"], "sdba1 is not a partition of sdb, nvme1n10 not of nvme1n1");
+        assert_eq!(unescape_mount_field("a\\134b\\011c"), "a\\b\tc");
+        assert_eq!(unescape_mount_field("trailing\\04"), "trailing\\04", "an incomplete escape stays as written");
+    }
 
     #[test]
     fn only_no_device_means_the_device_vanished() {

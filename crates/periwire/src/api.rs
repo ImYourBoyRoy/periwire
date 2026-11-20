@@ -220,13 +220,13 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
         }
         "export.set" => {
             let on = p.get("enabled").and_then(Value::as_bool).ok_or_else(|| invalid("missing boolean `enabled`"))?;
-            d.cfg.lock().unwrap().export.enabled = on;
-            d.save_cfg().map_err(failed)?;
             if on {
-                d.start_export().await.map_err(failed)?;
+                d.start_export().await.map_err(failed)?; // keep the choice only once it has worked
             } else {
                 d.stop_export();
             }
+            d.cfg.lock().unwrap().set_export_enabled(on);
+            d.save_cfg().map_err(failed)?;
             Ok(json!({"enabled": on}))
         }
         "doctor" => {
@@ -276,27 +276,25 @@ pub async fn serve(d: Arc<Daemon>, opts: &crate::RunOpts) -> Result<ApiHandle> {
             let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
         }
     }
-    if path.exists() {
-        if tokio::net::UnixStream::connect(&path).await.is_ok() {
-            anyhow::bail!("another periwire daemon is already running (socket {})", path.display());
+    if let Ok(meta) = std::fs::symlink_metadata(&path) {
+        use std::os::unix::fs::FileTypeExt;
+        if !meta.file_type().is_socket() {
+            anyhow::bail!("{} exists and is not a socket; refusing to replace it", path.display());
         }
-        std::fs::remove_file(&path)?; // stale
+        match tokio::net::UnixStream::connect(&path).await {
+            Ok(_) => anyhow::bail!("another periwire daemon is already running (socket {})", path.display()),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound) => std::fs::remove_file(&path)?, // stale
+            Err(e) => anyhow::bail!("cannot tell whether a daemon owns {} ({e}); not touching it", path.display()),
+        }
     }
     let listener = UnixListener::bind(&path).with_context(|| format!("binding {}", path.display()))?;
     let mode = opts.socket_mode.unwrap_or(0o660);
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))?;
     if crate::daemon::is_root() {
-        // Whoever started us with sudo/pkexec gets to use the socket.
+        // Whoever started us with sudo/pkexec owns the socket. Their primary group does not get access: on some systems every
+        // user shares one (`users`), which would hand every local user control of a root daemon. A group gets in only by `--socket-group`.
         let uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok().and_then(|v| v.parse::<u32>().ok());
-        let mut gid = std::env::var("SUDO_GID").ok().and_then(|v| v.parse::<u32>().ok());
-        if gid.is_none() {
-            if let Some(u) = uid {
-                let pw = unsafe { libc::getpwuid(u) };
-                if !pw.is_null() {
-                    gid = Some(unsafe { (*pw).pw_gid });
-                }
-            }
-        }
+        let mut gid = None;
         if let Some(g) = &opts.socket_group {
             let c = std::ffi::CString::new(g.as_str())?;
             let gr = unsafe { libc::getgrnam(c.as_ptr()) };
@@ -306,28 +304,55 @@ pub async fn serve(d: Arc<Daemon>, opts: &crate::RunOpts) -> Result<ApiHandle> {
             gid = Some(unsafe { (*gr).gr_gid });
         }
         let pc = std::ffi::CString::new(path.to_string_lossy().as_bytes())?;
-        unsafe { libc::chown(pc.as_ptr(), uid.unwrap_or(u32::MAX), gid.unwrap_or(u32::MAX)) };
+        let rc = unsafe { libc::chown(pc.as_ptr(), uid.unwrap_or(u32::MAX), gid.unwrap_or(u32::MAX)) };
+        if rc != 0 {
+            crate::logln!("warning: could not give the control socket to its owner ({}); only root can use it", std::io::Error::last_os_error());
+        }
+        if mode & 0o007 != 0 {
+            crate::logln!("warning: the control socket is open to every local user (mode {mode:o})");
+        }
     }
     crate::logln!("control socket {}", path.display());
 
     tokio::spawn(async move {
         loop {
-            let Ok((s, _)) = listener.accept().await else { continue };
-            tokio::spawn(handle_conn(d.clone(), s));
+            match listener.accept().await {
+                Ok((s, _)) => {
+                    tokio::spawn(handle_conn(d.clone(), s));
+                }
+                Err(e) => {
+                    crate::logln!("control socket: accept failed ({e})");
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    // no hot loop when out of file descriptors
+                }
+            }
         }
     });
     Ok(ApiHandle { path })
 }
 
+/// Longest request a control client may send.
+const MAX_REQUEST_LINE: u64 = 1024 * 1024;
+
 /// One control connection: read requests line by line, push events after `subscribe`.
 async fn handle_conn<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static>(d: Arc<Daemon>, s: S) {
+    use tokio::io::AsyncReadExt;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let (r, mut w) = tokio::io::split(s);
-    let mut lines = BufReader::new(r).lines();
+    let mut reader = BufReader::new(r);
     let mut sub: Option<tokio::sync::broadcast::Receiver<Value>> = None;
     loop {
+        // One request per line, at most MAX_REQUEST_LINE bytes: a client cannot make the daemon buffer an endless line.
+        let next_line = async {
+            let mut buf = Vec::new();
+            let n = (&mut reader).take(MAX_REQUEST_LINE).read_until(b'\n', &mut buf).await?;
+            if n == 0 || (buf.last() != Some(&b'\n') && n as u64 >= MAX_REQUEST_LINE) {
+                return Ok::<Option<String>, std::io::Error>(None);
+            }
+            Ok(Some(String::from_utf8_lossy(&buf).trim_end().to_string()))
+        };
         let line = tokio::select! {
-            l = lines.next_line() => match l { Ok(Some(l)) => l, _ => break },
+            l = next_line => match l { Ok(Some(l)) => l, _ => break },
             ev = async { match sub.as_mut() { Some(r) => r.recv().await, None => std::future::pending().await } } => {
                 match ev {
                     Ok(v) => { if w.write_all(format!("{v}\n").as_bytes()).await.is_err() { break; } }

@@ -196,7 +196,13 @@ impl Registry {
         #[cfg(target_os = "linux")]
         if let Some(local) = att.local_busid() {
             att.set(State::Detaching, None);
-            match tokio::task::spawn_blocking(move || crate::import::vhci::unmount(&local, force)).await? {
+            // A stuck drive or a dead link can make an unmount wait on I/O that never finishes: give it a limit and say what to do.
+            let work = tokio::task::spawn_blocking(move || crate::import::vhci::unmount(&local, force));
+            let outcome = match tokio::time::timeout(Duration::from_secs(if force { 10 } else { 30 }), work).await {
+                Ok(joined) => joined?,
+                Err(_) => Err(anyhow::anyhow!("the unmount did not finish (the drive or the network may be stuck); try again with force")),
+            };
+            match outcome {
                 Ok(m) => unmounted = m,
                 Err(e) => {
                     att.set(State::Attached, None);
@@ -224,9 +230,11 @@ impl Registry {
         for a in &all {
             let _ = a.cancel.send(true);
         }
+        // One shared deadline: with several stuck attachments a wait of its own for each would outlast the service manager's stop timeout.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         for a in all {
             let mut fin = a.finished.subscribe();
-            let _ = tokio::time::timeout(Duration::from_secs(10), async {
+            let _ = tokio::time::timeout_at(deadline, async {
                 while !*fin.borrow() {
                     if fin.changed().await.is_err() {
                         break;

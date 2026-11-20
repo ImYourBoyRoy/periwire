@@ -185,15 +185,7 @@ impl Daemon {
             }
             was
         };
-        let mut kicked = 0;
-        if was_ro != read_only {
-            for s in self.shared.sessions.lock().unwrap().values() {
-                let dev = format!("{:04x}:{:04x}", s.vid, s.pid);
-                if spec == s.busid || spec.eq_ignore_ascii_case(&dev) {
-                    kicked += self.shared.kick(s.id) as usize;
-                }
-            }
-        }
+        let kicked = if was_ro != read_only { self.shared.kick_matching(spec) } else { 0 };
         let mut c = self.cfg.lock().unwrap();
         if !c.shares.iter().any(|x| x.eq_ignore_ascii_case(spec)) {
             c.shares.push(spec.to_lowercase());
@@ -213,13 +205,7 @@ impl Daemon {
         self.shared.specs.write().unwrap().retain(|x| !x.eq_ignore_ascii_case(spec));
         self.shared.ro_specs.write().unwrap().retain(|x| !x.eq_ignore_ascii_case(spec));
         let removed = before - self.shared.specs.read().unwrap().len();
-        let mut kicked = 0;
-        for s in self.shared.sessions.lock().unwrap().values() {
-            let dev = format!("{:04x}:{:04x}", s.vid, s.pid);
-            if spec == s.busid || spec.eq_ignore_ascii_case(&dev) {
-                kicked += self.shared.kick(s.id) as usize;
-            }
-        }
+        let kicked = self.shared.kick_matching(spec);
         let mut c = self.cfg.lock().unwrap();
         c.shares.retain(|x| !x.eq_ignore_ascii_case(spec));
         c.ro_shares.retain(|x| !x.eq_ignore_ascii_case(spec));
@@ -313,11 +299,9 @@ pub fn validate_spec(spec: &str) -> Result<()> {
 /// Run the daemon until stopped.
 pub async fn run(opts: crate::RunOpts) -> Result<()> {
     let d = Daemon::new(true)?;
-    if let Some(l) = &opts.listen {
-        d.cfg.lock().unwrap().export.listen = l.clone();
-    }
-    if opts.no_export {
-        d.cfg.lock().unwrap().export.enabled = false;
+    if opts.listen.is_some() || opts.no_export {
+        d.cfg.lock().unwrap().override_export(opts.listen.clone(), opts.no_export.then_some(false));
+        // for this run only, never saved
     }
     for s in &opts.share {
         validate_spec(s)?;
