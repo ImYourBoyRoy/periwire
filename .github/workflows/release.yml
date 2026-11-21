@@ -160,6 +160,23 @@ jobs:
           cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
           ls -la
+      - name: A checksum file next to every download (imyourboyroy.com links "<file>.sha256")
+        run: |
+          cd dist
+          for f in *; do
+            case "$f" in SHA256SUMS.txt|*.json|*.sha256) continue ;; esac
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
+      - name: Check the download names the website matches on
+        # imyourboyroy.com picks the latest release's downloads by these name endings (src/data/software-projects.json there). A rename that
+        # breaks one would silently drop that button from the site, so fail the release instead.
+        run: |
+          cd dist
+          for p in 'x64-setup.exe' 'aarch64.dmg' '_x64.dmg' '.AppImage' '_amd64.deb'; do
+            n=$(ls | grep -ci -- "${p}\$" || true)
+            [ "$n" = 1 ] || { echo "expected exactly one download ending in $p, found $n: the website's rule would miss it or pick wrongly"; exit 1; }
+          done
       - name: List the Rust dependencies as an SBOM (CycloneDX)
         uses: anchore/sbom-action@v0
         with:

@@ -41,7 +41,7 @@ python3 tools/ui-churn.py --check
 Layout: `crates/usbip-proto` (wire format and the size limits every peer-controlled length is checked against), `crates/periwire` (daemon, `export/` the sharing side, importers, CLI, MCP, doctor),
 `crates/periwire-client` (control-API client), `gui/` (Tauri app; frontend is plain HTML/CSS/JS with a demo mode),
 `docs/`, `tools/` (dev scripts, not shipped). Details in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and
-[ARCHITECTURE](docs/ARCHITECTURE.md); contribution rules in [CONTRIBUTING.md](CONTRIBUTING.md).
+[ARCHITECTURE](docs/ARCHITECTURE.md); contribution rules in [CONTRIBUTING.md](CONTRIBUTING.md); release steps and the download names the website relies on in [docs/RELEASING.md](docs/RELEASING.md).
 
 Conventions: everything the UI can do must also exist in the control API, the CLI and an MCP tool; never `kill -9` a daemon that holds
 devices; keep files under ~500 lines and functions under ~100; validate anything a peer sends before allocating or indexing with it; never commit `.env`, `tools/lab.env`, `.state/` or `private/`; commit messages are plain text with no attribution trailers.

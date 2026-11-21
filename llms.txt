@@ -9,7 +9,7 @@ PeriWire speaks USB/IP inside mutually authenticated TLS (pairing by certificate
 - [README](https://github.com/ImYourBoyRoy/periwire/blob/main/README.md): install and two-computer quick start
 
 ## Docs
-- [MCP server](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/MCP.md): 20 tools, safety rules, setup
+- [MCP server](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/MCP.md): 21 tools, safety rules, setup
 - [CLI reference](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/CLI.md): every command, `--json`, exit codes
 - [Getting started](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/GETTING-STARTED.md): LAN, across subnets, into a VM
 - [Control API](https://github.com/ImYourBoyRoy/periwire/blob/main/docs/API.md): the JSON protocol shared by all front ends

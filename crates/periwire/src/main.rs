@@ -24,6 +24,7 @@ mod service;
 mod tls;
 mod tray;
 mod ui;
+mod update;
 mod urb;
 #[cfg(windows)]
 mod windrv;
@@ -210,6 +211,7 @@ async fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Id => cli::simple(&mut open(false).await?, j, "identity", json!({}), |v| v["fingerprint"].as_str().unwrap_or("").into()).await,
         Cmd::Doctor => cli::doctor(&mut open(false).await?, j).await,
+        Cmd::Update => cli::update(j).await,
         Cmd::Logs { lines, follow } => cli::logs(lines, follow).await,
         Cmd::Watch => cli::watch(j).await,
         Cmd::Stop => cli::simple(&mut open(true).await?, j, "shutdown", json!({}), |_| "daemon is stopping".into()).await,

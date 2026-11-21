@@ -125,6 +125,7 @@ closing the desktop app's window hides it to that icon ([how it works](docs/GUI.
 | [Testing status](docs/TESTING.md) | What is verified on real machines and the checklist for the next round |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Symptoms and fixes |
 | [Development](docs/DEVELOPMENT.md) | Building, testing, the lab scripts |
+| [Releasing](docs/RELEASING.md) | How a release is made, and the download names the website relies on |
 | [AGENTS.md](AGENTS.md) · [llms.txt](llms.txt) | The shortest path for AI assistants and coding agents |
 | [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) | |
 
@@ -153,7 +154,7 @@ Support/periwire` (macOS) or the directory in `PERIWIRE_HOME`. The daemon's cont
 (root), `$XDG_RUNTIME_DIR/periwire.sock` (user) or `PERIWIRE_SOCKET`. `PERIWIRE_TRACE=1` prints every URB.
 
 **Configuration** (`config.json`): `export.enabled`, `export.listen`, `shares[]`, `connections[]` (the remembered
-imports, `auto` flag). Edit through the CLI/app, not by hand while the daemon runs.
+imports, `auto` flag), `update_check` (the app's automatic check for a newer release; `periwire update` checks by hand). Edit through the CLI/app, not by hand while the daemon runs.
 
 ## License
 

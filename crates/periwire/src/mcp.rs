@@ -61,6 +61,7 @@ fn tools() -> Vec<Value> {
         tool("periwire_driver_status", "Windows only: is the virtual USB driver installed?", json!({}), &[], true, false),
         tool("periwire_driver_install", "Windows only: install the signed virtual USB driver PeriWire carries (kernel driver; USB 3 hubs restart briefly; daemon must be Administrator). Only on the user's request (confirmed_by_user=true).", json!({"confirmed_by_user": confirmed}), &["confirmed_by_user"], false, true),
         tool("periwire_export", "Turn the exporter on or off; off returns every shared device.", json!({"enabled": {"type": "boolean"}}), &["enabled"], false, true),
+        tool("periwire_update_check", "Is a newer PeriWire released? Asks GitHub once and installs nothing. Give the user the release link; do not download or install it for them.", json!({}), &[], true, false),
         tool("periwire_logs", "Recent daemon log lines.", json!({"lines": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "default 50"}}), &[], true, false),
     ]
 }
@@ -243,6 +244,10 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
             b.call("driver.install", json!({"confirm": true})).await.map_err(e2)
         }
         "periwire_export" => b.call("export.set", json!({"enabled": g("enabled")})).await.map_err(e2),
+        "periwire_update_check" => {
+            let current = env!("CARGO_PKG_VERSION");
+            tokio::task::spawn_blocking(move || crate::update::check_blocking(current)).await.map_err(|e| ("failed".to_string(), e.to_string()))?.map_err(ea)
+        }
         "periwire_logs" => Ok(json!({"lines": b.call("logs", json!({"lines": a.get("lines").cloned().unwrap_or(json!(50))})).await.map_err(e2)?})),
         _ => Err(("not_found".into(), format!("unknown tool {name}"))),
     }

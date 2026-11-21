@@ -46,6 +46,7 @@ Annotations tell clients which are read-only (no confirmation needed) and which 
 | `periwire_label_device` `{key, label}` | Name a local device (key from `periwire_list_devices`) | | |
 | `periwire_reset_identity` `{confirmed_by_user}` | New fingerprint for this computer; every peer must re-trust it | | yes |
 | `periwire_export` `{enabled}` | Start/stop the exporter | | yes |
+| `periwire_update_check` | Is a newer PeriWire released? Asks GitHub once, installs nothing; give the user the link | yes | |
 | `periwire_logs` `{lines?}` | Recent daemon log | yes | |
 | `periwire_driver_status` | Windows only: is the virtual USB host controller driver installed? | yes | |
 | `periwire_driver_install` `{confirmed_by_user}` | Windows only: install the signed driver carried inside PeriWire (kernel driver; USB 3 hubs restart briefly) | | yes |

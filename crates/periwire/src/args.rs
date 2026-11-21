@@ -131,6 +131,8 @@ pub(crate) enum Cmd {
     Identity(IdentityCmd),
     /// Check that everything needed works, and say how to fix what doesn't.
     Doctor,
+    /// Check whether a newer PeriWire has been released (one request to GitHub; installs nothing).
+    Update,
     /// Show the daemon log.
     Logs {
         #[arg(short = 'n', long, default_value_t = 50)]

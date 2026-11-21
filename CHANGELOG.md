@@ -3,6 +3,16 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [Unreleased]
+
+### Added
+- **Version and update check.** The desktop app shows its version at the bottom of the sidebar; clicking it opens *About* (app and daemon versions, a warning when
+  they differ after an update, *Check now*, and a switch for the automatic check). A banner appears when a newer release exists and opens its release page.
+  The same check is `periwire update` (CLI, `--json`), the API methods `update.check` / `update.set`, and the MCP tool `periwire_update_check` (21 tools now).
+  It is one request to GitHub's latest-release endpoint, only reports and links (nothing is downloaded or installed), and `"update_check": false` in `config.json` turns the app's automatic check off.
+- Every release download now has a `<file>.sha256` checksum file next to it (alongside `SHA256SUMS.txt`), and the Release workflow fails if a name that
+  imyourboyroy.com matches on is missing or ambiguous. The naming contract is in [docs/RELEASING.md](docs/RELEASING.md).
+
 ## [0.1.1] — 2026-11-20
 
 A bugfix release after a review of the whole code base and tests on Linux, Windows and macOS hardware. Everyone on 0.1.0 should update.

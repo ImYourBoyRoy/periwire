@@ -113,6 +113,11 @@ new fingerprint (`trust add`); the exporter restarts and current sessions drop. 
 Health checks with fixes: identity, USB access, permissions, importer support, daemon, exporter, trusted peers, each
 shared device (including "mounted locally"), and competing software such as VirtualHere. Exit code 4 on failures.
 
+### `periwire update`
+Asks GitHub (one HTTPS request, nothing sent but a `periwire/<version>` User-Agent) whether a newer release exists and prints the version, the release link and
+how to install it. It installs nothing and works without a daemon. `--json` prints `{current, latest, newer, url, published}`. The desktop app shows the same
+result; `"update_check": false` in `config.json` (or the switch in the app's About dialog) stops the app's automatic check.
+
 ### `periwire logs [-n N] [-f]` · `periwire watch`
 `logs` prints the last N daemon log lines (`-f` follows). `watch` streams events (use `--json` for one JSON object per
 line).

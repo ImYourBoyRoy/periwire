@@ -58,6 +58,8 @@ Try it: `printf '{"id":1,"method":"ping"}\n' | socat - UNIX-CONNECT:/run/periwir
 | `driver.status` | – | `{supported, status?}` Windows virtual USB host controller driver state (`supported:false` on Linux/macOS) |
 | `driver.install` | `confirm: true` | Installs the signed driver carried inside the program (Windows; the daemon must run as Administrator); idempotent; `{reboot, status}` |
 | `driver.uninstall` | `confirm: true` | Removes the device, both packages and the extracted tools |
+| `update.check` | – | `{current, latest, newer, url, published}`: asks GitHub whether a newer release exists (nothing is installed) |
+| `update.set` | `enabled` | Turns the desktop app's automatic update check on or off (saved as `update_check`); `status` reports it |
 | `logs` | `{lines?}` | `[string]` |
 | `subscribe` | – | `{subscribed:true}`, then events on this connection |
 | `shutdown` | – | `{stopping:true}` |

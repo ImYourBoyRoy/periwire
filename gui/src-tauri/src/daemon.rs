@@ -153,6 +153,33 @@ pub async fn start_daemon(privileged: bool) -> Result<(), Value> {
     ensure_daemon(privileged).await
 }
 
+/// This app's own version (the daemon reports its own through `status`; the two differ until the daemon is restarted after an update).
+#[tauri::command]
+pub fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+/// Is this a link the window may ask the system browser to open? Only PeriWire's own releases, with plain URL characters.
+pub(crate) fn is_release_link(url: &str) -> bool {
+    url.starts_with("https://github.com/ImYourBoyRoy/periwire/") && url.len() < 300 && url.bytes().all(|b| b.is_ascii_alphanumeric() || b"/.-_~:%".contains(&b))
+}
+
+/// Open a PeriWire release page in the default browser.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), Value> {
+    if !is_release_link(&url) {
+        return Err(err("denied", "the window may only open PeriWire's release pages".into()));
+    }
+    let mut cmd = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(windows) {
+        std::process::Command::new("explorer.exe")
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    cmd.arg(&url).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().map(|_| ()).map_err(|e| err("failed", format!("{e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +204,21 @@ mod tests {
         // the password prompt was cancelled; a terminal daemon starts minutes later
         assert!(!track_owner(&mut own, Some(&json!({"pid": 20, "started": 3200})), 3200));
         assert_eq!(own.spawned_at, None);
+    }
+
+    #[test]
+    fn only_periwire_release_pages_may_be_opened() {
+        assert!(is_release_link("https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.2.0"));
+        for bad in [
+            "https://evil.example/ImYourBoyRoy/periwire/",
+            "http://github.com/ImYourBoyRoy/periwire/",
+            "https://github.com/ImYourBoyRoy/periwire/ x",
+            "https://github.com/ImYourBoyRoy/periwire/&calc",
+            "https://github.com/ImYourBoyRoy/periwire/\"",
+            "file:///etc/passwd",
+            "",
+        ] {
+            assert!(!is_release_link(bad), "{bad}");
+        }
     }
 }

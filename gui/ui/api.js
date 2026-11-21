@@ -25,7 +25,7 @@ const winDemo = new URLSearchParams(location.search).has("win"); // ?demo&win si
 const sim = (() => {
   const t0 = now() - 5400;
   const st = {
-    version: "0.1.0", os: winDemo ? "windows" : "linux", arch: "x86_64", hostname: "studio-laptop", pid: 4242, daemon: true, started: t0, root: true,
+    version: "0.1.1", update_check: true, os: winDemo ? "windows" : "linux", arch: "x86_64", hostname: "studio-laptop", pid: 4242, daemon: true, started: t0, root: true,
     fingerprint: "7f3c9a1e5b28d4406ac1e9d37b52f8a0c4d6e1b93a7f205d8c4e6b1a9f30d7e2",
     export: { enabled: true, listen: "0.0.0.0:3241", state: "listening", error: null },
     import: winDemo ? { available: false, reason: "the Windows virtual USB host controller driver is not installed: run `periwire driver install` as Administrator" } : { available: true, reason: null },
@@ -61,7 +61,7 @@ const sim = (() => {
   };
   const logs = [];
   const log = (m) => { const d = new Date(); logs.push(`${d.toTimeString().slice(0, 8)} ${m}`); if (logs.length > 300) logs.shift(); emit("event", { event: "log", data: { line: logs[logs.length - 1] } }); };
-  [["periwire 0.1.0 starting; identity 7f3c9a1e5b28…"], ["exporter listening on 0.0.0.0:3241"], ["control socket /run/periwire/periwire.sock"], ["auto-attaching 3-2 from media-pc.local:3241"], ["attached 3-2 1050:0407 from media-pc.local:3241 on vhci port 0"], ["[10.0.0.31:51200] imported 1-1 05ac:12ab"]].forEach(([m]) => log(m));
+  [["periwire 0.1.1 starting; identity 7f3c9a1e5b28…"], ["exporter listening on 0.0.0.0:3241"], ["control socket /run/periwire/periwire.sock"], ["auto-attaching 3-2 from media-pc.local:3241"], ["attached 3-2 1050:0407 from media-pc.local:3241 on vhci port 0"], ["[10.0.0.31:51200] imported 1-1 05ac:12ab"]].forEach(([m]) => log(m));
   let nextAtt = 2;
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const fail = (code, message) => { throw { code, message }; };
@@ -102,6 +102,8 @@ const sim = (() => {
       case "driver.status": return winDemo ? { supported: true, status: { ready: st.import.available, embedded_version: "0.9.8.1", admin: true, vc_runtime: true, packages: [], device: null, tools: null } } : { supported: false, note: "only Windows needs a separate driver" };
       case "driver.install": { if (!p.confirm) fail("invalid", "needs confirm=true"); await delay(2600); st.import = { available: true, reason: null }; logs.push(`${new Date().toTimeString().slice(0, 8)} installed the Windows virtual USB host controller driver`); return { reboot: false, status: { ready: true } }; }
       case "export.set": { st.export.enabled = p.enabled; st.export.state = p.enabled ? "listening" : "disabled"; if (!p.enabled) { st.sessions = []; devices.forEach((d) => (d.in_use_by = null)); } log(p.enabled ? `exporter listening on ${st.export.listen}` : "exporter stopped; devices return to this machine"); return { enabled: p.enabled }; }
+      case "update.check": { await delay(500); const newer = new URLSearchParams(location.search).has("update"); return { current: "0.1.1", latest: newer ? "0.2.0" : "0.1.1", newer, url: "https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.2.0", published: "2026-12-01T00:00:00Z" }; }
+      case "update.set": st.update_check = !!p.enabled; return { enabled: !!p.enabled };
       case "doctor": { await delay(700); return [
         { id: "identity", title: "Identity", status: "ok", detail: `fingerprint ${st.fingerprint.slice(0, 16)}…`, fix: null },
         { id: "libusb", title: "USB access (built-in libusb)", status: "ok", detail: `${devices.length} shareable device(s) visible`, fix: null },

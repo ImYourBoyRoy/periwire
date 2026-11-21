@@ -1,5 +1,6 @@
 import { call, on, start, startDaemon, demo } from "./api.js";
 import { openPicker } from "./theme.js";
+import { initAbout } from "./about.js";
 import { PAGES, BASICS, GLOSSARY, EXPERT } from "./help.js";
 
 // ------------------------------------------------------------------ helpers
@@ -658,6 +659,7 @@ async function setConnected(c) {
 }
 on("status", (st) => { S.status = st; updateRates(st); if (!S.connected) setConnected(true); renderAll(); });
 on("connection", setConnected);
+initAbout({ S, h, $, esc, modal, toast, setText }); // version, About dialog, update banner (about.js)
 on("event", (ev) => { if (ev.event === "log") addLog(ev.data.line); });
 on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);

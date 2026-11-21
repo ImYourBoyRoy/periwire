@@ -380,3 +380,13 @@ table.cli { width: 100%; border-collapse: collapse; } table.cli td { padding: 5p
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .switch:focus-visible { border-radius: 14px; }
 .input:focus-visible { outline: none; }
+
+/* version, update banner, About dialog (about.js) */
+.ver { margin-top: 8px; padding: 6px 12px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--text-3); font: inherit; font-size: 11.5px; text-align: left; cursor: pointer; }
+.ver:hover, .ver:focus-visible { color: var(--text); border-color: var(--border); }
+.update-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; border-radius: 13px; background: var(--surface); border: 1px solid var(--accent); color: var(--text); font-size: 13px; }
+.update-banner[hidden] { display: none; }
+.about .check { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 14px; color: var(--text-2); font-size: 13px; }
+.about .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.warn-text { color: var(--warn, #c8821a); }
+@media (max-width: 940px) { .ver { display: none; } }

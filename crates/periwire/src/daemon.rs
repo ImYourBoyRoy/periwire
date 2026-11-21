@@ -154,7 +154,7 @@ impl Daemon {
             "hostname": gethostname::gethostname().to_string_lossy(), "pid": std::process::id(),
             "daemon": self.running, "started": self.started, "uptime": events::now().saturating_sub(self.started),
             "root": is_root(), "fingerprint": self.fingerprint(),
-            "export": {"enabled": cfg.export.enabled, "listen": cfg.export.listen, "state": exp.state, "error": exp.error},
+            "update_check": cfg.update_check, "export": {"enabled": cfg.export.enabled, "listen": cfg.export.listen, "state": exp.state, "error": exp.error},
             "import": {"available": import_ok, "reason": import_reason},
             "shares": shares,
             "sessions": sessions.iter().map(|s| s.view()).collect::<Vec<_>>(),

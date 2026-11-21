@@ -285,6 +285,27 @@ pub async fn resolve_session(b: &mut Backend, target: &str) -> Result<Value> {
     }
 }
 
+// ---------- update ----------
+
+/// `periwire update`: is a newer release out? Works without a daemon; changes nothing.
+pub async fn update(json_out: bool) -> Result<i32> {
+    let current = env!("CARGO_PKG_VERSION");
+    let info = tokio::task::spawn_blocking(move || crate::update::check_blocking(current)).await?.map_err(|e| anyhow::anyhow!("{e:#}"))?;
+    if json_out {
+        print_json(&info);
+        return Ok(0);
+    }
+    if info["newer"] == json!(true) {
+        println!("{}  {} is available (you have {})", bold("update"), s(&info, "latest"), s(&info, "current"));
+        println!("  release notes and downloads: {}", s(&info, "url"));
+        println!("  Windows/macOS: run the new installer or disk image. Linux: install the new .deb, replace the AppImage, or unpack the tar.gz.");
+        println!("  Verify a download:  gh attestation verify <file> --repo ImYourBoyRoy/periwire   (and compare SHA256SUMS.txt)");
+    } else {
+        println!("periwire {} is the latest release.", s(&info, "current"));
+    }
+    Ok(0)
+}
+
 // ---------- logs / watch ----------
 
 pub async fn logs(lines: usize, follow: bool) -> Result<i32> {

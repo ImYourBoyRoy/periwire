@@ -28,7 +28,7 @@ pub struct Connection {
     pub read_only: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub export: ExportCfg,
@@ -40,6 +40,9 @@ pub struct Config {
     pub ro_shares: Vec<String>,
     #[serde(default)]
     pub connections: Vec<Connection>,
+    /// Ask GitHub now and then whether a newer release exists (the desktop app shows it). Off: `periwire` never contacts GitHub by itself.
+    #[serde(default = "yes")]
+    pub update_check: bool,
     /// User-chosen device names, keyed by `vid:pid[:serial]`.
     #[serde(default)]
     pub labels: std::collections::BTreeMap<String, String>,
@@ -47,6 +50,16 @@ pub struct Config {
     /// override lasts only as long as the daemon does and is never made permanent by an unrelated change such as sharing a device.
     #[serde(skip)]
     persisted_export: Option<ExportCfg>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { export: ExportCfg::default(), shares: vec![], ro_shares: vec![], connections: vec![], update_check: true, labels: Default::default(), persisted_export: None }
+    }
 }
 
 fn path() -> std::path::PathBuf {
@@ -97,6 +110,15 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_checks_are_on_unless_switched_off() {
+        assert!(Config::default().update_check, "a new install checks");
+        let c: Config = serde_json::from_str("{}").unwrap();
+        assert!(c.update_check, "a config written before the option existed checks too");
+        let off: Config = serde_json::from_str(r#"{"update_check": false}"#).unwrap();
+        assert!(!off.update_check);
+    }
 
     #[test]
     fn a_run_only_override_is_not_saved_but_an_explicit_choice_is() {

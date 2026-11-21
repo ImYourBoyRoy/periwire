@@ -54,6 +54,8 @@ pub const METHODS: &[(&str, &str)] = &[
     ("driver.install", "{confirm: true} -> install the signed driver carried inside the program (Windows; the daemon must run as Administrator)"),
     ("driver.uninstall", "{confirm: true} -> remove it again"),
     ("doctor", "{} -> health checks with fixes"),
+    ("update.check", "{} -> {current, latest, newer, url, published}: asks GitHub whether a newer release exists (nothing is installed)"),
+    ("update.set", "{enabled} -> turn the desktop app's automatic update check on or off (saved)"),
     ("logs", "{lines?} -> recent daemon log lines"),
     ("subscribe", "{} -> stream events on this connection"),
     ("shutdown", "{} -> stop the daemon gracefully"),
@@ -233,6 +235,18 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
         "doctor" => {
             let d2 = d.clone();
             Ok(json!(tokio::task::spawn_blocking(move || doctor::run(&d2)).await.map_err(|e| failed(e.into()))?))
+        }
+        "update.check" => {
+            let current = env!("CARGO_PKG_VERSION");
+            let r = tokio::task::spawn_blocking(move || crate::update::check_blocking(current)).await.map_err(|e| failed(e.into()))?;
+            r.map_err(failed)
+        }
+        "update.set" => {
+            let on = p.get("enabled").and_then(Value::as_bool).ok_or_else(|| invalid("missing boolean `enabled`"))?;
+            d.cfg.lock().unwrap().update_check = on;
+            d.save_cfg().map_err(failed)?;
+            events::emit("state", json!({}));
+            Ok(json!({"enabled": on}))
         }
         "logs" => Ok(json!(events::recent(p.get("lines").and_then(Value::as_u64).unwrap_or(100) as usize))),
         "shutdown" => {
