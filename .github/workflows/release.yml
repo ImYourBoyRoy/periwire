@@ -166,6 +166,7 @@ jobs:
         run: |
           cd dist
           for f in *; do
+            [ -f "$f" ] || continue # a stray folder from a packaging step is not a download
             case "$f" in SHA256SUMS.txt|*.json|*.sha256) continue ;; esac
             sha256sum "$f" > "$f.sha256"
           done
