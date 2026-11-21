@@ -72,6 +72,14 @@ async fn open(need_daemon: bool) -> Result<Backend> {
 async fn main() {
     selfupdate::cleanup_old(); // Windows: a previous self-update leaves the old program beside this one
     let cli = Cli::parse();
+    #[cfg(unix)]
+    if !matches!(cli.cmd, Cmd::Daemon { .. } | Cmd::Mcp) {
+        // A closed pipe (`periwire status | head`) ends the command quietly, like any Unix tool. Rust ignores SIGPIPE by default, so `println!` would panic instead.
+        // The daemon and the MCP server keep ignoring it: a socket that closes under them must not kill them.
+        unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        }
+    }
     if let Some(sock) = &cli.socket {
         std::env::set_var("PERIWIRE_SOCKET", sock);
     }

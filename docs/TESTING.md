@@ -46,9 +46,12 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 | GUI (browser/demo mode) | six themes, responsive layout, driver banner, read-only switches, help drawer, first-run guide |
 | MCP | compact tool list and replies; safety gates unchanged |
 | iPad throughput through the macOS importer | NCM write-behind and read-ahead (`mac.rs`): 200 MB to the iPad in 39 s over a 7 ms link (was 7+ min), hash-identical after a round trip; read-ahead alone about 1.25x; iPad to Mac 2.6 MB/s (unchanged) |
+| `self-install`, `self-uninstall`, `self-update`, `install.sh`, `install.ps1` | Linux (bash): PATH link and profile block, a new shell finds the command and loads completions, uninstall restores the profile byte for byte; against the real v0.1.1 release on GitHub and a local mirror (file and loopback http), a wrong checksum and a non-loopback http mirror are refused; macOS (zsh, scratch home): install, completions, update, install script (it follows a moved program), uninstall; Windows Server 2025: user PATH added, idempotent and restored exactly, update replaces the running program with the old one moved aside and deleted at the next run, bad checksum changes nothing, `install.ps1` end to end |
 | In-app help | the `help_matches_cli` test checks every command and flag in `gui/ui/help.js` against the real CLI |
 
 ## Not verified yet
+
+- `self-install` in a real fish or PowerShell 7 session, on an AppImage, and from the `.deb`/NSIS/dmg installers; `self-update` against a release that has `.sha256` files (0.1.2 will be the first) and from the app's *Install update* button inside the real window.
 
 - Sustained pushes to an iPad on a **USB 3 (10 Gbps) port**: 100-200 MB pushes failed after about 35 s three times (the iPad dropped off the host's USB bus; kernel `usb_submit_urb returned -19`,
   xHCI `Set TR Deq Ptr` warning), also with the exporter from before the 2026-11-20 review changes and with a longer bulk poll step. On a USB 2 port the same 200 MB push and read-back passed

@@ -13,6 +13,7 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 - **The command line is found without installing it.** A copy of the app that did not come from a package (AppImage, tarball, a build in a folder) now also puts a
   `periwire` link in `~/.local/bin` the first time it starts (for an AppImage a copy of the program, since its mount point changes), unless a `periwire` is already
   on the PATH or `PERIWIRE_NO_LAUNCHER=1` is set; `periwire-gui --register-launcher` does it on demand. Before, only the `.deb` provided the `periwire` command.
+- Commands that print (`status`, `doctor`, `logs` …) end quietly when their output is piped into something that closes early (`periwire status | head`), instead of panicking. The daemon and the MCP server are unaffected.
 - **`periwire self-update`** (after enchi's): downloads the release archive for this system, refuses anything that does not match its SHA-256, and replaces `periwire` and `periwire-gui` beside it (Windows: the old
   files are moved aside; a failed replacement is rolled back). Packages and the macOS app bundle get instructions instead. `--to VERSION`, `--dry-run`, `--force`, and `PERIWIRE_RELEASE_BASE_URL` for mirrors.
   The app's update banner and About dialog now have *Install update*. Not an MCP tool on purpose.
