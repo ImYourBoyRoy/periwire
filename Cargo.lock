@@ -2632,6 +2632,7 @@ dependencies = [
  "tokio-rustls",
  "ureq",
  "usbip-proto",
+ "winreg",
 ]
 
 [[package]]

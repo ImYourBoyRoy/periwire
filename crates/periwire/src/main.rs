@@ -20,6 +20,7 @@ mod mac;
 mod mcp;
 mod ntfs;
 mod resume;
+mod selfinstall;
 mod service;
 mod tls;
 mod tray;
@@ -211,6 +212,8 @@ async fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Id => cli::simple(&mut open(false).await?, j, "identity", json!({}), |v| v["fingerprint"].as_str().unwrap_or("").into()).await,
         Cmd::Doctor => cli::doctor(&mut open(false).await?, j).await,
+        Cmd::SelfInstall { yes, dry_run, no_shell, quiet } => selfinstall::self_install(yes, dry_run, no_shell, quiet, j),
+        Cmd::SelfUninstall { yes } => selfinstall::self_uninstall(yes, j),
         Cmd::Update => cli::update(j).await,
         Cmd::Logs { lines, follow } => cli::logs(lines, follow).await,
         Cmd::Watch => cli::watch(j).await,

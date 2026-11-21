@@ -51,6 +51,15 @@ export function initAbout({ S, h, $, esc, modal, toast, setText }) {
     finally { st.checking = false; }
   };
 
+  async function terminalSetup(btn, undo) {
+    btn.disabled = true;
+    try {
+      const text = demo ? "(demo) nothing changed" : await T.core.invoke("terminal_setup", { undo });
+      toast(text.split("\n").slice(0, 4).join(" · "), "ok", 9000);
+    } catch (e) { toast(`${e.message || e}`, "bad", 9000); }
+    btn.disabled = false;
+  }
+
   async function about() {
     const app = await appVersion(), d = daemonVersion();
     const body = h("div", { class: "about" });
@@ -65,6 +74,10 @@ export function initAbout({ S, h, $, esc, modal, toast, setText }) {
           h("input", { type: "checkbox", id: "auto-update", checked: S.status?.update_check !== false ? "" : null, onchange: async (e) => {
             try { await call("update.set", { enabled: e.target.checked }); } catch (err) { e.target.checked = !e.target.checked; toast(err.message, "bad"); }
           } }), " Check for updates automatically (one request to github.com now and then)"),
+        h("p", { class: "muted", html: "The <code>periwire</code> command in your terminals: a link in <code>~/.local/bin</code> and a PATH block in your shell profiles (Linux, macOS), or your user PATH (Windows). Reversible." }),
+        h("div", { class: "row" },
+          h("button", { class: "btn", id: "terminal-setup", onclick: async (e) => terminalSetup(e.target, false) }, "Set up the periwire command"),
+          h("button", { class: "btn ghost", id: "terminal-undo", onclick: async (e) => terminalSetup(e.target, true) }, "Undo")),
         h("div", { class: "row" },
           h("button", { class: "btn", id: "check-now", onclick: async (e) => {
             e.target.disabled = true; e.target.textContent = "Checking…";

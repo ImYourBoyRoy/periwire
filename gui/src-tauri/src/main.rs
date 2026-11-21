@@ -120,7 +120,7 @@ fn main() {
                 show_main(app);
             }
         }))
-        .invoke_handler(tauri::generate_handler![daemon::api, daemon::start_daemon, daemon::app_version, daemon::open_url])
+        .invoke_handler(tauri::generate_handler![daemon::api, daemon::start_daemon, daemon::app_version, daemon::open_url, daemon::terminal_setup])
         .setup(|app| {
             let handle = app.handle().clone();
             let (items, _, _) = tray_view(None, false);

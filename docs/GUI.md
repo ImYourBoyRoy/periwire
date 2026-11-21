@@ -36,6 +36,7 @@ is closed and the app can be restarted any time.
 - **Version and updates** — the version is at the bottom of the sidebar; click it for *About* (app and daemon versions, a warning when they differ after an
   update, *Check now*, and the switch for the automatic check). When a newer release exists a banner says so and opens its release page in your browser: PeriWire never
   downloads or installs anything by itself. The check is one request to github.com now and then; turn it off in *About* or with `"update_check": false`.
+- **Terminal command** — *About* has *Set up the periwire command* (and *Undo*): the same as `periwire self-install` / `self-uninstall` (PATH and shell profiles), for a copy that was not installed from a package.
 - Keyboard: `1`–`6` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
 
 - **Names people recognise.** Devices show their label (hover a card and click the pencil to rename one), or product name, plus a

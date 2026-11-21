@@ -113,6 +113,17 @@ new fingerprint (`trust add`); the exporter restarts and current sessions drop. 
 Health checks with fixes: identity, USB access, permissions, importer support, daemon, exporter, trusted peers, each
 shared device (including "mounted locally"), and competing software such as VirtualHere. Exit code 4 on failures.
 
+### `periwire self-install [-y] [--dry-run] [--no-shell]` · `periwire self-uninstall [-y]`
+Makes `periwire` work in every shell, and undoes it exactly. Nothing but a package puts the command on your PATH, so a copy of the app that was not installed
+(an AppImage, a tarball, a build folder, a Windows or macOS app) does not have it until you run this.
+- **Windows:** the folder that holds `periwire.exe` goes into your *user* PATH (registry; PowerShell and cmd both read it; the value keeps its type). No profile files.
+- **Linux and macOS:** `~/.local/bin/periwire` links to the program (to a copy in `~/.local/share/periwire/bin` for an AppImage, whose mount point changes) and one
+  delimited block (`# >>> periwire >>>` … `# <<< periwire <<<`) in your bash, zsh and fish profiles puts that folder on PATH and loads completions. Only profiles that
+  exist (and your login shell's) are touched; `--no-shell` skips them. fish gets its own file, `conf.d/periwire.fish`.
+- It asks first (or `--yes`), `--dry-run` only lists the steps, a copy installed by a package or another `periwire` on the PATH is left alone, and a file of yours at
+  `~/.local/bin/periwire` is never replaced. What was done is recorded in `install-receipt.json` in the config folder; `self-uninstall` removes exactly that (the program,
+  your identity, trust list and settings stay). The desktop app's *About* dialog has a button for it, and the app itself only links the command on Linux (no profile edits).
+
 ### `periwire update`
 Asks GitHub (one HTTPS request, nothing sent but a `periwire/<version>` User-Agent) whether a newer release exists and prints the version, the release link and
 how to install it. It installs nothing and works without a daemon. `--json` prints `{current, latest, newer, url, published}`. The desktop app shows the same

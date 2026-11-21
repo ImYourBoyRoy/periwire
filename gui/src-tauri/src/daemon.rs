@@ -159,6 +159,23 @@ pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// Run the command line's `self-install` (or `self-uninstall`) for the window's "terminal commands" button; returns what it printed.
+#[tauri::command]
+pub async fn terminal_setup(undo: bool) -> Result<String, Value> {
+    let bin = find_periwire().ok_or_else(|| err("failed", "could not find the `periwire` program next to this app or in PATH".into()))?;
+    let args: &[&str] = if undo { &["self-uninstall", "--yes"] } else { &["self-install", "--yes"] };
+    let out = tokio::task::spawn_blocking(move || std::process::Command::new(bin).args(args).stdin(std::process::Stdio::null()).output())
+        .await
+        .map_err(|e| err("failed", e.to_string()))?
+        .map_err(|e| err("failed", e.to_string()))?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
+    if out.status.success() {
+        Ok(text)
+    } else {
+        Err(err("failed", text))
+    }
+}
+
 /// Is this a link the window may ask the system browser to open? Only PeriWire's own releases, with plain URL characters.
 pub(crate) fn is_release_link(url: &str) -> bool {
     url.starts_with("https://github.com/ImYourBoyRoy/periwire/") && url.len() < 300 && url.bytes().all(|b| b.is_ascii_alphanumeric() || b"/.-_~:%".contains(&b))

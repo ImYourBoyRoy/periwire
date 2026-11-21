@@ -131,6 +131,27 @@ pub(crate) enum Cmd {
     Identity(IdentityCmd),
     /// Check that everything needed works, and say how to fix what doesn't.
     Doctor,
+    /// Make `periwire` work in every shell: a link in ~/.local/bin and a block in your shell profiles (Linux, macOS), or your user PATH (Windows). Reversible.
+    SelfInstall {
+        /// Do not ask first.
+        #[arg(short, long)]
+        yes: bool,
+        /// Only show what would change.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the shell profiles (Linux, macOS): only link the command.
+        #[arg(long)]
+        no_shell: bool,
+        /// Print nothing but errors.
+        #[arg(short, long)]
+        quiet: bool,
+    },
+    /// Undo `self-install`: remove the link, the profile blocks and the PATH entry it made (the program, your identity and settings stay).
+    SelfUninstall {
+        /// Do not ask first.
+        #[arg(short, long)]
+        yes: bool,
+    },
     /// Check whether a newer PeriWire has been released (one request to GitHub; installs nothing).
     Update,
     /// Show the daemon log.

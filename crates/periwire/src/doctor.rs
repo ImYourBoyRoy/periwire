@@ -170,9 +170,9 @@ fn cli_on_path_check() -> Value {
         Some(p) => check("cli-path", "The periwire command", "ok", format!("found on your PATH: {}", p.display()), None),
         None => {
             let fix = if cfg!(windows) {
-                "add the folder that holds periwire.exe to your user PATH (Settings > System > About > Advanced system settings > Environment Variables), then open a new terminal"
+                "run `periwire self-install` (adds the folder that holds periwire.exe to your user PATH), then open a new PowerShell or cmd window"
             } else {
-                "run `periwire-gui --register-launcher` (links ~/.local/bin/periwire), or install the .deb, or add the folder that holds periwire to PATH; then open a new terminal"
+                "run `periwire self-install` (links ~/.local/bin/periwire and sets up your shells), or install the .deb; then open a new terminal"
             };
             let detail = match here {
                 Some(h) => format!("not found on your PATH (this copy runs from {})", h.display()),
@@ -186,6 +186,7 @@ fn cli_on_path_check() -> Value {
 /// What is wrong with usbmuxd, given `systemctl is-enabled` / `is-active` output and whether an Apple device is attached here and not currently
 /// handed to another computer. A masked or stopped usbmuxd leaves an iPhone/iPad stuck in its basic USB mode: it never shows up in the file manager or
 /// tethers, and unplugging and replugging does nothing.
+#[cfg(any(target_os = "linux", test))]
 fn usbmuxd_problem(enabled: &str, active: &str, apple_here: bool) -> Option<(&'static str, String, &'static str)> {
     if !apple_here {
         return None;
