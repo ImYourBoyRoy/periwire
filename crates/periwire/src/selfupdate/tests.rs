@@ -31,9 +31,10 @@ fn what_can_be_updated_where() {
     assert_eq!(target(Path::new("/tmp/x/periwire"), Some("/home/u/PeriWire.AppImage".into())), Target::AppImage("/home/u/PeriWire.AppImage".into()));
     let d = std::env::temp_dir().join(format!("pw-su-target-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
-    std::fs::write(d.join("periwire"), b"x").unwrap();
-    std::fs::write(d.join("periwire-gui"), b"y").unwrap();
-    let Target::Folder { files } = target(&d.join("periwire"), None) else { panic!("a folder install") };
+    let (cli, gui) = exe_names();
+    std::fs::write(d.join(cli), b"x").unwrap();
+    std::fs::write(d.join(gui), b"y").unwrap();
+    let Target::Folder { files } = target(&d.join(cli), None) else { panic!("a folder install") };
     assert_eq!(files.len(), 2, "the program and the app beside it");
     let _ = std::fs::remove_dir_all(&d);
 }

@@ -27,7 +27,7 @@ ureq = { version = "2", default-features = false, features = ["tls"] } # the upd
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

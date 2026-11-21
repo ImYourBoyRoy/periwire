@@ -28,7 +28,7 @@ pub fn extract(bytes: &[u8], asset: &str, wanted: &[String]) -> Result<Vec<(Stri
                 if f.is_dir() {
                     continue;
                 }
-                let name = f.name().rsplit('/').next().unwrap_or("").to_string();
+                let name = f.name()?.rsplit('/').next().unwrap_or("").to_string();
                 if wanted.contains(&name) && !found.iter().any(|(n, _)| *n == name) {
                     let mut data = Vec::new();
                     f.read_to_end(&mut data)?;
