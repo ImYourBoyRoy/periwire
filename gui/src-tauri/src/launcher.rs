@@ -6,6 +6,9 @@
 //! `TryExec`, so if the file is later deleted the launcher hides itself instead of lingering. Packages (programs under `/usr`, `/opt`,
 //! a snap, a flatpak, the Nix store) are left alone, and an entry written earlier is removed once a package provides one.
 //! Opt out with `PERIWIRE_NO_LAUNCHER=1`.
+//!
+//! The same goes for the command line: nothing but a package puts `periwire` on the PATH, so a copy that was not installed gets a
+//! `periwire` link in `~/.local/bin` (for an AppImage, a copy of the program inside it, since its mount point changes at every start).
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -114,6 +117,76 @@ pub fn ensure() -> Option<Outcome> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CliOutcome {
+    Disabled,
+    /// A package, or somebody else's copy, already provides `periwire` on the PATH.
+    Available,
+    Linked,
+    Unchanged,
+    /// `~/.local/bin/periwire` is a file somebody put there: left alone.
+    Foreign,
+}
+
+/// Is there an executable `periwire` in a PATH folder other than `bin_dir`?
+pub fn on_path_elsewhere(bin_dir: &Path) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| std::env::split_paths(&paths).filter(|d| d != bin_dir).any(|d| d.join("periwire").is_file()))
+}
+
+/// Make `bin_dir/periwire` lead to the command-line program. `in_appimage`: copy it to `data_dir/bin` first (the mount it lives in is temporary).
+pub fn link_cli(bin_dir: &Path, data_dir: &Path, cli: &Path, on_path: bool, in_appimage: bool, opt_out: bool) -> io::Result<CliOutcome> {
+    if opt_out {
+        return Ok(CliOutcome::Disabled);
+    }
+    if on_path || is_packaged(cli) && !in_appimage {
+        return Ok(CliOutcome::Available);
+    }
+    let target = if in_appimage {
+        let copy = data_dir.join("bin/periwire");
+        let bytes = std::fs::read(cli)?;
+        if write_if_different(&copy, &bytes)? {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755))?;
+        }
+        copy
+    } else {
+        cli.to_path_buf()
+    };
+    let link = bin_dir.join("periwire");
+    match std::fs::symlink_metadata(&link) {
+        Ok(m) if m.file_type().is_symlink() => {
+            if std::fs::read_link(&link)? == target {
+                return Ok(CliOutcome::Unchanged);
+            }
+            std::fs::remove_file(&link)?; // ours or stale: follow the program to where it is now
+        }
+        Ok(_) => return Ok(CliOutcome::Foreign),
+        Err(_) => std::fs::create_dir_all(bin_dir)?,
+    }
+    std::os::unix::fs::symlink(&target, &link)?;
+    Ok(CliOutcome::Linked)
+}
+
+/// Called with `ensure`: give the person a `periwire` command if nothing else does.
+pub fn ensure_cli() -> Option<CliOutcome> {
+    let exe = std::env::current_exe().ok()?;
+    let cli = exe.parent()?.join("periwire");
+    if !cli.is_file() {
+        return None;
+    }
+    let (data, home) = (data_home()?, std::env::var_os("HOME").map(PathBuf::from)?);
+    let bin_dir = home.join(".local/bin");
+    let opt_out = std::env::var_os("PERIWIRE_NO_LAUNCHER").map(|v| !v.is_empty() && v != "0").unwrap_or(false);
+    let in_appimage = std::env::var_os("APPIMAGE").is_some();
+    match link_cli(&bin_dir, &data.join("periwire"), &cli, on_path_elsewhere(&bin_dir), in_appimage, opt_out) {
+        Ok(o) => Some(o),
+        Err(e) => {
+            eprintln!("periwire: could not put the command line on the PATH: {e}");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,5 +251,46 @@ mod tests {
         for p in ["/home/x/PeriWire.AppImage", "/tmp/.mount_PeriWiabc/usr/bin/periwire-gui", "/home/x/usr/bin/periwire-gui"] {
             assert!(!is_packaged(Path::new(p)), "{p}");
         }
+    }
+
+    #[test]
+    fn the_command_line_gets_a_link_unless_something_already_provides_it() {
+        let d = scratch("cli");
+        let (bin, data) = (d.join("bin"), d.join("data"));
+        let cli = d.join("apps/periwire");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, b"program").unwrap();
+        assert_eq!(link_cli(&bin, &data, &cli, false, false, true).unwrap(), CliOutcome::Disabled);
+        assert_eq!(link_cli(&bin, &data, &cli, true, false, false).unwrap(), CliOutcome::Available, "a copy on the PATH is enough");
+        assert_eq!(link_cli(&bin, &data, Path::new("/usr/bin/periwire"), false, false, false).unwrap(), CliOutcome::Available, "a package puts it on the PATH");
+        assert_eq!(link_cli(&bin, &data, &cli, false, false, false).unwrap(), CliOutcome::Linked);
+        assert_eq!(std::fs::read_link(bin.join("periwire")).unwrap(), cli);
+        assert_eq!(link_cli(&bin, &data, &cli, false, false, false).unwrap(), CliOutcome::Unchanged, "starting again changes nothing");
+        let moved = d.join("elsewhere/periwire");
+        std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+        std::fs::write(&moved, b"program").unwrap();
+        assert_eq!(link_cli(&bin, &data, &moved, false, false, false).unwrap(), CliOutcome::Linked, "a moved program is followed");
+        assert_eq!(std::fs::read_link(bin.join("periwire")).unwrap(), moved);
+    }
+
+    #[test]
+    fn a_file_somebody_put_there_is_left_alone_and_an_appimage_is_copied_out() {
+        let d = scratch("cli2");
+        let (bin, data) = (d.join("bin"), d.join("data"));
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("periwire"), b"mine").unwrap();
+        let cli = d.join("mnt/periwire");
+        std::fs::create_dir_all(cli.parent().unwrap()).unwrap();
+        std::fs::write(&cli, b"program v2").unwrap();
+        assert_eq!(link_cli(&bin, &data, &cli, false, false, false).unwrap(), CliOutcome::Foreign);
+        assert_eq!(std::fs::read(bin.join("periwire")).unwrap(), b"mine");
+        std::fs::remove_file(bin.join("periwire")).unwrap();
+        assert_eq!(link_cli(&bin, &data, &cli, false, true, false).unwrap(), CliOutcome::Linked);
+        let copy = data.join("bin/periwire");
+        assert_eq!(std::fs::read(&copy).unwrap(), b"program v2");
+        assert_eq!(std::fs::read_link(bin.join("periwire")).unwrap(), copy, "the link points at the copy, not the temporary mount");
+        std::fs::write(&cli, b"program v3").unwrap();
+        link_cli(&bin, &data, &cli, false, true, false).unwrap();
+        assert_eq!(std::fs::read(&copy).unwrap(), b"program v3", "an update refreshes the copy");
     }
 }

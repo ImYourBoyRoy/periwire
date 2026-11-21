@@ -101,14 +101,16 @@ fn main() {
     #[cfg(target_os = "linux")]
     {
         if std::env::args().any(|a| a == "--register-launcher") {
+            let cli = launcher::ensure_cli();
             match launcher::ensure() {
-                Some(o) => println!("launcher: {o:?}"),
+                Some(o) => println!("launcher: {o:?}, command line: {cli:?}"),
                 None => std::process::exit(1),
             }
             return;
         }
         if !cfg!(debug_assertions) {
             launcher::ensure();
+            launcher::ensure_cli();
         }
     }
     tauri::Builder::default()

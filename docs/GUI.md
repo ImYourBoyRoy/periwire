@@ -72,7 +72,8 @@ app and stops a daemon the app started.
 - Linux AppImage or unpacked tarball: the first time the app starts it adds the same entry and icon under `~/.local/share` (nothing
   system-wide), pointing at the file it ran from; moving the file updates the entry on the next start, deleting it hides the entry.
   It steps aside when a package or a system-wide entry provides one. `periwire-gui --register-launcher` does only this and exits;
-  `PERIWIRE_NO_LAUNCHER=1` turns it off.
+  `PERIWIRE_NO_LAUNCHER=1` turns it off. The same start also gives you the `periwire` command: a link in `~/.local/bin` (for an AppImage, to a copy of the
+  program in `~/.local/share/periwire/bin`), unless a `periwire` is already on the PATH. The `.deb` installs `/usr/bin/periwire` itself.
 - Windows installer: a Start-menu shortcut (and, if ticked on the last page, a Desktop shortcut). macOS: drag *PeriWire* to Applications
   from the disk image; it then shows in Launchpad.
 
