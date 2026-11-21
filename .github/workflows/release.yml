@@ -160,6 +160,8 @@ jobs:
           cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
           ls -la
+      - name: Add the install scripts
+        run: cp install.sh install.ps1 dist/
       - name: A checksum file next to every download (imyourboyroy.com links "<file>.sha256")
         run: |
           cd dist

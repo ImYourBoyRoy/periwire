@@ -159,11 +159,9 @@ pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// Run the command line's `self-install` (or `self-uninstall`) for the window's "terminal commands" button; returns what it printed.
-#[tauri::command]
-pub async fn terminal_setup(undo: bool) -> Result<String, Value> {
+/// Run the command line program with `args` and return what it printed (an error carries what it printed when it failed).
+async fn run_cli(args: Vec<&'static str>) -> Result<String, Value> {
     let bin = find_periwire().ok_or_else(|| err("failed", "could not find the `periwire` program next to this app or in PATH".into()))?;
-    let args: &[&str] = if undo { &["self-uninstall", "--yes"] } else { &["self-install", "--yes"] };
     let out = tokio::task::spawn_blocking(move || std::process::Command::new(bin).args(args).stdin(std::process::Stdio::null()).output())
         .await
         .map_err(|e| err("failed", e.to_string()))?
@@ -174,6 +172,18 @@ pub async fn terminal_setup(undo: bool) -> Result<String, Value> {
     } else {
         Err(err("failed", text))
     }
+}
+
+/// The window's "terminal commands" button: the command line's `self-install` (or `self-uninstall`).
+#[tauri::command]
+pub async fn terminal_setup(undo: bool) -> Result<String, Value> {
+    run_cli(if undo { vec!["self-uninstall", "--yes"] } else { vec!["self-install", "--yes"] }).await
+}
+
+/// The window's "Install update" button: the command line's `self-update`, which checks the download's SHA-256 before it replaces anything.
+#[tauri::command]
+pub async fn self_update() -> Result<String, Value> {
+    run_cli(vec!["self-update", "--yes"]).await
 }
 
 /// Is this a link the window may ask the system browser to open? Only PeriWire's own releases, with plain URL characters.

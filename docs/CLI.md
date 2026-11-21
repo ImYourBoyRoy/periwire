@@ -124,6 +124,17 @@ Makes `periwire` work in every shell, and undoes it exactly. Nothing but a packa
   `~/.local/bin/periwire` is never replaced. What was done is recorded in `install-receipt.json` in the config folder; `self-uninstall` removes exactly that (the program,
   your identity, trust list and settings stay). The desktop app's *About* dialog has a button for it, and the app itself only links the command on Linux (no profile edits).
 
+### `periwire self-update [-y] [--dry-run] [--to VERSION] [--force]`
+Updates this copy of PeriWire to the latest release (after enchi's `self-update`). It downloads the release archive for this system
+(`periwire-<version>-<os>-<arch>.tar.gz`, or `.zip` on Windows; the AppImage for an AppImage), checks it against the release's `<file>.sha256` (older releases: `SHA256SUMS.txt`) and refuses
+to install anything that does not match, then replaces `periwire` and `periwire-gui` beside this program (on Windows the old files are moved aside and deleted at the next run; if a replacement fails the
+earlier ones are put back). Restart the daemon and the app afterwards.
+- A **package** (the `.deb`) or the **macOS app bundle** is not changed here: it prints how to update (package manager, or the new `.dmg`).
+- `--to VERSION` installs that version instead (also to go back); `--force` reinstalls the current one.
+- The checksum comes from the same release over HTTPS, so it catches a damaged or swapped download but is not a signature: `gh attestation verify <file> --repo ImYourBoyRoy/periwire` is the stronger check.
+- `PERIWIRE_RELEASE_BASE_URL` points at a folder holding the archive and its `.sha256` (https, `file://`, or http on 127.0.0.1) for mirrors and tests. The app's *Install update* button runs this command.
+- It is deliberately **not** an MCP tool: an assistant can tell you an update exists (`periwire_update_check`), installing software stays your decision.
+
 ### `periwire update`
 Asks GitHub (one HTTPS request, nothing sent but a `periwire/<version>` User-Agent) whether a newer release exists and prints the version, the release link and
 how to install it. It installs nothing and works without a daemon. `--json` prints `{current, latest, newer, url, published}`. The desktop app shows the same

@@ -21,10 +21,13 @@ sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
 clap_complete = "4"
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
 ureq = { version = "2", default-features = false, features = ["tls"] } # the update check (one HTTPS request to GitHub), rustls + built-in roots
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

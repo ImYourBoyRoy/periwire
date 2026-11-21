@@ -92,6 +92,18 @@ cargo build --release                      # -> target/release/periwire   (CLI, 
 cargo build --release -p periwire-gui        # -> target/release/periwire-gui (desktop app; needs the system webview, see docs/GUI.md)
 ```
 
+**One-line install** (downloads the release, checks its SHA-256, unpacks it and runs `periwire self-install`; undo with `periwire self-uninstall`):
+
+```bash
+curl -fsSL https://github.com/ImYourBoyRoy/periwire/releases/latest/download/install.sh | sh      # Linux, macOS
+```
+```powershell
+irm https://github.com/ImYourBoyRoy/periwire/releases/latest/download/install.ps1 | iex            # Windows (PowerShell)
+```
+
+Keep it current with `periwire self-update` (or the app's *Install update* button); `periwire update` only checks. A copy that was not installed from a package gets the `periwire`
+command in every shell with `periwire self-install` ([CLI reference](docs/CLI.md#periwire-self-install--y---dry-run---no-shell--periwire-self-uninstall--y)).
+
 Run the daemon as a service so it starts at boot: `sudo periwire service install` (Linux/systemd), or
 `periwire service print` for the launchd/systemd definition. Whenever a daemon runs (from a terminal, as a service, or started by an AI assistant) a taskbar icon appears;
 closing the desktop app's window hides it to that icon ([how it works](docs/GUI.md#run)). Turn it off with `--no-tray`.

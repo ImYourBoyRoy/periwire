@@ -21,6 +21,7 @@ mod mcp;
 mod ntfs;
 mod resume;
 mod selfinstall;
+mod selfupdate;
 mod service;
 mod tls;
 mod tray;
@@ -69,6 +70,7 @@ async fn open(need_daemon: bool) -> Result<Backend> {
 
 #[tokio::main]
 async fn main() {
+    selfupdate::cleanup_old(); // Windows: a previous self-update leaves the old program beside this one
     let cli = Cli::parse();
     if let Some(sock) = &cli.socket {
         std::env::set_var("PERIWIRE_SOCKET", sock);
@@ -214,6 +216,7 @@ async fn run(cli: Cli) -> Result<i32> {
         Cmd::Doctor => cli::doctor(&mut open(false).await?, j).await,
         Cmd::SelfInstall { yes, dry_run, no_shell, quiet } => selfinstall::self_install(yes, dry_run, no_shell, quiet, j),
         Cmd::SelfUninstall { yes } => selfinstall::self_uninstall(yes, j),
+        Cmd::SelfUpdate { yes, dry_run, to, force } => tokio::task::spawn_blocking(move || selfupdate::self_update(yes, dry_run, to, force, j)).await?,
         Cmd::Update => cli::update(j).await,
         Cmd::Logs { lines, follow } => cli::logs(lines, follow).await,
         Cmd::Watch => cli::watch(j).await,

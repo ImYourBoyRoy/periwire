@@ -152,6 +152,21 @@ pub(crate) enum Cmd {
         #[arg(short, long)]
         yes: bool,
     },
+    /// Update this copy of PeriWire to the latest release (or --to VERSION): downloads the release archive, checks its SHA-256, replaces the programs beside this one.
+    SelfUpdate {
+        /// Do not ask first.
+        #[arg(short, long)]
+        yes: bool,
+        /// Only show what would happen.
+        #[arg(long)]
+        dry_run: bool,
+        /// Install this version instead of the latest (also to go back).
+        #[arg(long, value_name = "VERSION")]
+        to: Option<String>,
+        /// Reinstall even if this is already the latest version.
+        #[arg(long)]
+        force: bool,
+    },
     /// Check whether a newer PeriWire has been released (one request to GitHub; installs nothing).
     Update,
     /// Show the daemon log.

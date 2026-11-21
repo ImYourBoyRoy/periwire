@@ -28,6 +28,14 @@ The version is in the name but the website never needs it: the tag (`vX.Y.Z`) is
 The portable archives (`periwire-X.Y.Z-<os>-<arch>.tar.gz` / `.zip`) are not on the website; they are for scripts and the command line.
 If a name must change, update the rule on the website in the same change.
 
+## Install scripts and self-update
+
+`install.sh` and `install.ps1` (repository root) are attached to every release, and `periwire self-update` downloads from it: both locate the archive by name,
+`periwire-<version>-<os>-<arch>.tar.gz` (linux-x86_64, macos-arm64, macos-x86_64) and `periwire-<version>-windows-x86_64.zip`, plus `<archive>.sha256` beside it, and the AppImage
+`periwire_<version>_amd64.AppImage`. Each archive holds one folder with `periwire` and `periwire-gui` (`.exe` on Windows). Do not rename or reshape them without changing the scripts and
+`crates/periwire/src/selfupdate`. Test a release candidate without publishing: put the archive and its `.sha256` in a folder and run `PERIWIRE_RELEASE_BASE_URL=file:///that/folder periwire self-update --to X.Y.Z --dry-run`
+(or the install scripts the same way).
+
 ## Update check
 
 `periwire update`, the desktop app and the MCP tool `periwire_update_check` read the same `releases/latest` endpoint and compare versions

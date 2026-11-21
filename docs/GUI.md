@@ -34,8 +34,8 @@ is closed and the app can be restarted any time.
 - The icon shows whenever a daemon runs, however it was started (see *The taskbar icon follows the daemon* below). Closing the window hides the app to the icon.
 - If the daemon is not running the app offers *Start daemon* (and, on Linux, *Start with admin rights* via `pkexec`).
 - **Version and updates** — the version is at the bottom of the sidebar; click it for *About* (app and daemon versions, a warning when they differ after an
-  update, *Check now*, and the switch for the automatic check). When a newer release exists a banner says so and opens its release page in your browser: PeriWire never
-  downloads or installs anything by itself. The check is one request to github.com now and then; turn it off in *About* or with `"update_check": false`.
+  update, *Check now*, and the switch for the automatic check). When a newer release exists a banner says so with *Install update* (runs `periwire self-update`, which checks the download's SHA-256 first;
+  a package or the macOS app bundle gets instructions instead) and *What's new* (the release page). Nothing is downloaded until you click. The check is one request to github.com now and then; turn it off in *About* or with `"update_check": false`.
 - **Terminal command** — *About* has *Set up the periwire command* (and *Undo*): the same as `periwire self-install` / `self-uninstall` (PATH and shell profiles), for a copy that was not installed from a package.
 - Keyboard: `1`–`6` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
 

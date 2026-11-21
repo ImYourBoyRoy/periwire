@@ -1,5 +1,5 @@
 // Version, "what is new" and the update check. app.js hands over its helpers (no import cycle); everything here talks to the daemon through
-// the same `call` the rest of the page uses. Nothing is installed from here: it tells you a newer release exists and opens its page.
+// the same `call` the rest of the page uses. *Install update* runs `periwire self-update` (checks the download's SHA-256 first); *What's new* opens the release page.
 import { call, on, demo } from "./api.js";
 
 const SIX_HOURS = 6 * 3600 * 1000;
@@ -38,7 +38,8 @@ export function initAbout({ S, h, $, esc, modal, toast, setText }) {
     if (!show) { banner.replaceChildren(); return; }
     banner.replaceChildren(
       h("span", {}, `PeriWire ${u.latest} is available (you have ${u.current}). `),
-      h("button", { class: "btn", onclick: () => openRelease(u.url) }, "What's new and download"),
+      h("button", { class: "btn primary", id: "install-update", onclick: (e) => installUpdate(e.target) }, "Install update"),
+      h("button", { class: "btn", onclick: () => openRelease(u.url) }, "What's new"),
       h("button", { class: "btn ghost", onclick: () => { st.dismissed = u.latest; paint(); }, "aria-label": "Dismiss" }, "Not now"));
   };
 
@@ -50,6 +51,16 @@ export function initAbout({ S, h, $, esc, modal, toast, setText }) {
     catch (e) { if (!quiet) throw e; return null; }
     finally { st.checking = false; }
   };
+
+  /** The command line replaces the programs after checking the download's SHA-256; packages and the macOS disk image say how to update instead. */
+  async function installUpdate(btn) {
+    btn.disabled = true; const label = btn.textContent; btn.textContent = "Installing…";
+    try {
+      const text = demo ? "(demo) nothing changed" : await T.core.invoke("self_update");
+      toast(text.split("\n").filter((l) => l.startsWith("updated") || l.startsWith("Restart")).join(" ") || text, "ok", 15000);
+    } catch (e) { toast(`${e.message || e}`, "bad", 15000); }
+    btn.textContent = label; btn.disabled = false;
+  }
 
   async function terminalSetup(btn, undo) {
     btn.disabled = true;
@@ -84,7 +95,8 @@ export function initAbout({ S, h, $, esc, modal, toast, setText }) {
             try { await check(false); } catch (err) { toast(`Could not check: ${err.message}`, "bad", 7000); }
             render();
           } }, "Check now"),
-          u?.newer ? h("button", { class: "btn primary", onclick: () => openRelease(u.url) }, "What's new and download") : ""));
+          u?.newer ? h("button", { class: "btn primary", onclick: (e) => installUpdate(e.target) }, "Install update") : "",
+          u?.newer ? h("button", { class: "btn", onclick: () => openRelease(u.url) }, "What's new") : ""));
     };
     render();
     await modal({ title: "About PeriWire", body, actions: [{ label: "Close", value: true, kind: "primary" }] });
