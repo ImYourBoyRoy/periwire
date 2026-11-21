@@ -3,7 +3,10 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
-## [Unreleased]
+## [0.1.2] — 2026-11-21
+
+Adds a version display, an update check and in-place updates, the `periwire` command in every shell, and one-line installers. Everyone on 0.1.1 can update with the app's *About* dialog or by downloading it.
+
 
 ### Added
 - **Version and update check.** The desktop app shows its version at the bottom of the sidebar; clicking it opens *About* (app and daemon versions, a warning when
@@ -21,6 +24,9 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 - **`periwire self-install` / `self-uninstall`** (after enchi's installer): make the `periwire` command work in every shell and undo it exactly. Windows: the program's folder goes into your user PATH
   (PowerShell and cmd). Linux/macOS: a link in `~/.local/bin` plus one delimited block in your bash, zsh and fish profiles (PATH and completions). It asks first, supports `--dry-run`, leaves packages and
   your own files alone, and records what it did in `install-receipt.json`. The app's *About* dialog has a button for it. (Replaces the app's earlier link-only helper, which now just runs `self-install --no-shell`.)
+- The Windows installer now runs `periwire self-install` after installing (so `periwire` works in new PowerShell and cmd windows) and `self-uninstall` before removing the app. What `self-install`, `self-uninstall`
+  and `self-update` do is also appended to `install.log` in the config folder.
+- `periwire doctor` also notices an app launcher entry or a `~/.local/bin/periwire` link whose program has been moved or deleted (Linux).
 - **`periwire doctor` explains two more ways to get stuck:** the `periwire` command not being on your PATH (with the fix for your OS), and, on Linux, `usbmuxd` masked or stopped while an iPhone/iPad is
   attached (the device stays in its basic USB mode and never shows up; unplugging does nothing).
 - Every release download now has a `<file>.sha256` checksum file next to it (alongside `SHA256SUMS.txt`), and the Release workflow fails if a name that
@@ -93,5 +99,6 @@ First public release.
 - macOS and Windows programs are not signed with a paid developer certificate (macOS: right-click > Open the first time).
 - See [platform status](docs/PLATFORMS.md) and [what has been tested](docs/TESTING.md).
 
+[0.1.2]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.0

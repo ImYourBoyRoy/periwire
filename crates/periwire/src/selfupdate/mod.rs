@@ -180,6 +180,7 @@ pub fn self_update(yes: bool, dry_run: bool, to: Option<String>, force: bool, js
     }
 
     install_from(&base, &asset, &tgt)?;
+    crate::selfinstall::log(&format!("self-update: {current} -> {version} ({asset}) replaced {}", places.join(", ")));
     if json_out {
         println!("{}", json!({"updated": true, "from": current, "to": version, "replaced": places}));
     } else {

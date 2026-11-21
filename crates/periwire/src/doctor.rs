@@ -32,6 +32,8 @@ pub fn run(d: &Daemon) -> Vec<Value> {
 
     // the command line, reachable from a shell
     c.push(cli_on_path_check());
+    // leftovers of an app that was moved or deleted (Linux)
+    c.extend(stale_install_checks());
     // Apple devices on this computer need usbmuxd (Linux)
     if let Some(chk) = usbmuxd_check() {
         c.push(chk);
@@ -158,6 +160,49 @@ pub fn run(d: &Daemon) -> Vec<Value> {
     c
 }
 
+/// The `TryExec=` target of a launcher entry written by the app itself (it carries the marker), if the file is one of ours.
+#[cfg(any(target_os = "linux", test))]
+fn own_launcher_target(entry_text: &str) -> Option<String> {
+    entry_text.contains("X-PeriWire-Self-Registered=true").then(|| entry_text.lines().find_map(|l| l.strip_prefix("TryExec=")).map(|t| t.trim().to_string())).flatten()
+}
+
+/// A launcher entry or `~/.local/bin/periwire` link whose program is gone: the app was moved or deleted after it registered itself.
+#[cfg(target_os = "linux")]
+fn stale_install_checks() -> Vec<Value> {
+    let mut out = vec![];
+    let home = dirs::home_dir();
+    let data = dirs::data_dir();
+    if let Some(entry) = data.map(|d| d.join("applications/periwire.desktop")) {
+        if let Some(target) = std::fs::read_to_string(&entry).ok().and_then(|t| own_launcher_target(&t)) {
+            if !std::path::Path::new(&target).exists() {
+                out.push(check(
+                    "launcher",
+                    "App launcher entry",
+                    "warn",
+                    format!("the menu entry points at {target}, which is gone (the app was moved or deleted)"),
+                    Some("start the app from its new place (it fixes the entry itself), or delete ~/.local/share/applications/periwire.desktop"),
+                ));
+            }
+        }
+    }
+    if let Some(link) = home.map(|h| h.join(".local/bin/periwire")) {
+        if std::fs::symlink_metadata(&link).map(|m| m.file_type().is_symlink()).unwrap_or(false) && !link.exists() {
+            out.push(check(
+                "cli-link",
+                "The periwire link",
+                "warn",
+                format!("{} points at a program that is gone", link.display()),
+                Some("run `periwire self-install` from the program's new place, or `periwire self-uninstall`, or delete the link"),
+            ));
+        }
+    }
+    out
+}
+#[cfg(not(target_os = "linux"))]
+fn stale_install_checks() -> Vec<Value> {
+    vec![]
+}
+
 /// The first folder of `path_env` that holds an executable `name`.
 fn find_on_path(name: &str, path_env: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
     std::env::split_paths(path_env).map(|d| d.join(name)).find(|p| p.is_file())
@@ -256,6 +301,13 @@ mod tests {
         assert_eq!(usbmuxd_problem("masked-runtime", "inactive", true).unwrap().0, "fail");
         assert_eq!(usbmuxd_problem("static", "inactive", true).unwrap().0, "warn");
         assert!(usbmuxd_problem("static", "active", true).is_none());
+    }
+
+    #[test]
+    fn only_our_own_launcher_entries_are_judged() {
+        let ours = "[Desktop Entry]\nName=PeriWire\nTryExec=/home/x/PeriWire.AppImage\nX-PeriWire-Self-Registered=true\n";
+        assert_eq!(own_launcher_target(ours).as_deref(), Some("/home/x/PeriWire.AppImage"));
+        assert_eq!(own_launcher_target("[Desktop Entry]\nName=Mine\nTryExec=/x\n"), None, "somebody else's entry is not ours to judge");
     }
 
     #[test]

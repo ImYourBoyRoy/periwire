@@ -85,6 +85,22 @@ fn receipt_path() -> PathBuf {
     crate::identity::home().join("install-receipt.json")
 }
 
+/// Append a line to `install.log` in the config folder (what `self-install`, `self-uninstall` and `self-update` did, and when). Trimmed to its last ~200 KB.
+pub fn log(line: &str) {
+    use std::io::Write;
+    let path = crate::identity::home().join("install.log");
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
+    if std::fs::metadata(&path).map(|m| m.len() > 200_000).unwrap_or(false) {
+        if let Ok(old) = std::fs::read_to_string(&path) {
+            let tail = old.get(old.len().saturating_sub(100_000)..).unwrap_or(""); // at a character boundary, else nothing is kept
+            let _ = std::fs::write(&path, tail.split_once('\n').map(|x| x.1).unwrap_or(""));
+        }
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{} {line}", crate::events::now());
+    }
+}
+
 fn read_receipt() -> Receipt {
     std::fs::read_to_string(receipt_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
@@ -253,6 +269,7 @@ pub fn self_install(yes: bool, dry_run: bool, no_shell: bool, quiet: bool, json_
         std::fs::create_dir_all(d)?;
     }
     write_if_different(&receipt_path(), serde_json::to_string_pretty(&receipt)?.as_bytes())?;
+    report.iter().for_each(|l| log(&format!("self-install: {l}")));
     if json_out {
         println!("{}", json!({"changed": true, "report": report, "receipt": receipt}));
     } else if !quiet {
@@ -319,6 +336,7 @@ pub fn self_uninstall(yes: bool, json_out: bool) -> Result<i32> {
         });
     }
     let _ = std::fs::remove_file(receipt_path());
+    report.iter().for_each(|l| log(&format!("self-uninstall: {l}")));
     if json_out {
         println!("{}", json!({"report": report}));
     } else {
