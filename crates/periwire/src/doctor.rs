@@ -30,6 +30,13 @@ pub fn run(d: &Daemon) -> Vec<Value> {
         Err(e) => c.push(check("libusb", "USB access (built-in libusb)", "fail", format!("{e}"), Some("check that USB is available to this user"))),
     }
 
+    // the command line, reachable from a shell
+    c.push(cli_on_path_check());
+    // Apple devices on this computer need usbmuxd (Linux)
+    if let Some(chk) = usbmuxd_check() {
+        c.push(chk);
+    }
+
     // importer
     match crate::attach::can_import() {
         Ok(()) => c.push(check("import", "Importing devices", "ok", import_detail(), None)),
@@ -151,6 +158,67 @@ pub fn run(d: &Daemon) -> Vec<Value> {
     c
 }
 
+/// The first folder of `path_env` that holds an executable `name`.
+fn find_on_path(name: &str, path_env: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
+    std::env::split_paths(path_env).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+fn cli_on_path_check() -> Value {
+    let name = if cfg!(windows) { "periwire.exe" } else { "periwire" };
+    let here = std::env::current_exe().ok();
+    match std::env::var_os("PATH").and_then(|p| find_on_path(name, &p)) {
+        Some(p) => check("cli-path", "The periwire command", "ok", format!("found on your PATH: {}", p.display()), None),
+        None => {
+            let fix = if cfg!(windows) {
+                "add the folder that holds periwire.exe to your user PATH (Settings > System > About > Advanced system settings > Environment Variables), then open a new terminal"
+            } else {
+                "run `periwire-gui --register-launcher` (links ~/.local/bin/periwire), or install the .deb, or add the folder that holds periwire to PATH; then open a new terminal"
+            };
+            let detail = match here {
+                Some(h) => format!("not found on your PATH (this copy runs from {})", h.display()),
+                None => "not found on your PATH".into(),
+            };
+            check("cli-path", "The periwire command", "warn", detail, Some(fix))
+        }
+    }
+}
+
+/// What is wrong with usbmuxd, given `systemctl is-enabled` / `is-active` output and whether an Apple device is attached here and not currently
+/// handed to another computer. A masked or stopped usbmuxd leaves an iPhone/iPad stuck in its basic USB mode: it never shows up in the file manager or
+/// tethers, and unplugging and replugging does nothing.
+fn usbmuxd_problem(enabled: &str, active: &str, apple_here: bool) -> Option<(&'static str, String, &'static str)> {
+    if !apple_here {
+        return None;
+    }
+    if enabled.starts_with("masked") {
+        return Some((
+            "fail",
+            "usbmuxd is masked (blocked from starting), so an iPhone or iPad attached to this computer cannot finish connecting".into(),
+            "sudo systemctl unmask usbmuxd (or `unmask --runtime`), then sudo systemctl start usbmuxd",
+        ));
+    }
+    if active != "active" {
+        return Some(("warn", format!("usbmuxd is {active} while an Apple device is attached"), "sudo systemctl start usbmuxd, or unplug and replug the device"));
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn usbmuxd_check() -> Option<Value> {
+    let apple_here = export::local_devices().map(|d| d.iter().any(|(u, _)| u.id_vendor == 0x05ac)).unwrap_or(false);
+    let sctl = |a: &str| std::process::Command::new("systemctl").args([a, "usbmuxd"]).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let (enabled, active) = if apple_here { (sctl("is-enabled"), sctl("is-active")) } else { (String::new(), String::new()) };
+    match usbmuxd_problem(&enabled, &active, apple_here) {
+        Some((status, detail, fix)) => Some(check("usbmuxd", "iPhone/iPad support (usbmuxd)", status, detail, Some(fix))),
+        None if apple_here => Some(check("usbmuxd", "iPhone/iPad support (usbmuxd)", "ok", "running", None)),
+        None => None,
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn usbmuxd_check() -> Option<Value> {
+    None
+}
+
 fn import_detail() -> String {
     #[cfg(target_os = "linux")]
     {
@@ -175,4 +243,30 @@ fn process_running(name: &str) -> bool {
     }
     let _ = name;
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_masked_or_stopped_usbmuxd_is_reported_only_when_an_apple_device_is_here() {
+        assert!(usbmuxd_problem("masked", "inactive", false).is_none(), "nothing to say without an iPhone or iPad");
+        assert_eq!(usbmuxd_problem("masked-runtime", "inactive", true).unwrap().0, "fail");
+        assert_eq!(usbmuxd_problem("static", "inactive", true).unwrap().0, "warn");
+        assert!(usbmuxd_problem("static", "active", true).is_none());
+    }
+
+    #[test]
+    fn the_command_is_found_in_the_first_path_folder_that_has_it() {
+        let d = std::env::temp_dir().join(format!("pw-doctor-{}", std::process::id()));
+        let (a, b) = (d.join("a"), d.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(b.join("periwire"), b"x").unwrap();
+        let path = std::env::join_paths([&a, &b]).unwrap();
+        assert_eq!(find_on_path("periwire", &path), Some(b.join("periwire")));
+        assert_eq!(find_on_path("nothing", &path), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

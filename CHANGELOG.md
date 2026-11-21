@@ -13,6 +13,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 - **The command line is found without installing it.** A copy of the app that did not come from a package (AppImage, tarball, a build in a folder) now also puts a
   `periwire` link in `~/.local/bin` the first time it starts (for an AppImage a copy of the program, since its mount point changes), unless a `periwire` is already
   on the PATH or `PERIWIRE_NO_LAUNCHER=1` is set; `periwire-gui --register-launcher` does it on demand. Before, only the `.deb` provided the `periwire` command.
+- **`periwire doctor` explains two more ways to get stuck:** the `periwire` command not being on your PATH (with the fix for your OS), and, on Linux, `usbmuxd` masked or stopped while an iPhone/iPad is
+  attached (the device stays in its basic USB mode and never shows up; unplugging does nothing).
 - Every release download now has a `<file>.sha256` checksum file next to it (alongside `SHA256SUMS.txt`), and the Release workflow fails if a name that
   imyourboyroy.com matches on is missing or ambiguous. The naming contract is in [docs/RELEASING.md](docs/RELEASING.md).
 
