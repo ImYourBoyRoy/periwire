@@ -328,7 +328,16 @@ pub async fn run(opts: crate::RunOpts) -> Result<()> {
     crate::logln!("shutting down: ejecting imports and releasing shared devices...");
     d.stop_export();
     d.atts.shutdown_all().await;
+    // Let the importers' sessions end (their devices go back to this computer), then put back whatever was stepped aside for them (usbmuxd):
+    // the process must not exit before that has happened.
+    for _ in 0..80 {
+        if d.shared.sessions.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    tokio::task::spawn_blocking(export::hostprep::restore_all).await.ok();
     api.cleanup();
     crate::logln!("stopped");
     Ok(())

@@ -3,6 +3,13 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [0.1.5] — 2026-11-21
+
+The `usbmuxd` restore, now also when the daemon is stopped.
+
+### Fixed
+- Stopping the daemon while an Apple device was shared exited before `usbmuxd` was started again, so the iPad stayed missing from the desktop. The daemon now waits for its sessions to end and restores `usbmuxd` before it exits (checked with a real iPad: shared, then detached, then daemon stopped, then daemon killed and started again).
+
 ## [0.1.4] — 2026-11-21
 
 Fixes the update check, makes the app run and control the daemon, and puts an iPad back on your computer after sharing.
@@ -124,6 +131,7 @@ First public release.
 - macOS and Windows programs are not signed with a paid developer certificate (macOS: right-click > Open the first time).
 - See [platform status](docs/PLATFORMS.md) and [what has been tested](docs/TESTING.md).
 
+[0.1.5]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.5
 [0.1.4]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.2
