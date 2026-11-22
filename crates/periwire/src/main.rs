@@ -39,7 +39,7 @@ use backend::Backend;
 use clap::{CommandFactory, Parser};
 use driver_cli::driver_cmd;
 use serde_json::json;
-use service::{service_install, service_uninstall};
+use service::{service_install, service_status, service_uninstall};
 
 pub struct RunOpts {
     pub listen: Option<String>,
@@ -47,6 +47,7 @@ pub struct RunOpts {
     pub share: Vec<String>,
     pub socket: Option<String>,
     pub socket_group: Option<String>,
+    pub socket_user: Option<String>,
     pub socket_mode: Option<u32>,
     pub no_tray: bool,
 }
@@ -105,12 +106,12 @@ async fn main() {
 async fn run(cli: Cli) -> Result<i32> {
     let j = cli.json;
     match cli.cmd {
-        Cmd::Daemon { listen, no_export, share, daemon_socket, socket_group, socket_mode, no_tray } => {
+        Cmd::Daemon { listen, no_export, share, daemon_socket, socket_group, socket_user, socket_mode, no_tray } => {
             let socket_mode = match socket_mode {
                 Some(m) => Some(u32::from_str_radix(&m, 8).map_err(|_| anyhow::anyhow!("--socket-mode must be octal, like 660"))?),
                 None => None,
             };
-            daemon::run(RunOpts { listen, no_export, share, socket: daemon_socket.or(cli.socket), socket_group, socket_mode, no_tray }).await?;
+            daemon::run(RunOpts { listen, no_export, share, socket: daemon_socket.or(cli.socket), socket_group, socket_user, socket_mode, no_tray }).await?;
             Ok(0)
         }
         Cmd::Status => cli::status(&mut open(false).await?, j).await,
@@ -256,11 +257,12 @@ async fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Service(sc) => match sc {
             ServiceCmd::Print { user } => {
-                print!("{}", cli::service_text(user));
+                print!("{}", cli::service_text(user, None));
                 Ok(0)
             }
-            ServiceCmd::Install => service_install(),
+            ServiceCmd::Install { for_user } => service_install(for_user),
             ServiceCmd::Uninstall => service_uninstall(),
+            ServiceCmd::Status => service_status(j),
         },
         Cmd::Driver(dc) => driver_cmd(dc, j),
         Cmd::Completions { shell } => {

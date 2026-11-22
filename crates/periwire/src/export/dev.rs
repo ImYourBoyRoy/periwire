@@ -52,7 +52,16 @@ impl Dev {
     pub(super) fn open(dev: Device<Context>) -> Result<Self> {
         let (bus, ports) = (dev.bus_number(), dev.port_numbers().unwrap_or_default());
         let storage = is_mass_storage(&dev);
-        let h = dev.open()?;
+        // Step aside whatever else holds this kind of device (usbmuxd for Apple's); `Drop` puts it back when the last one is released.
+        let (vid, busid) = (dev.device_descriptor().map(|d| d.vendor_id()).unwrap_or(0), super::busid(&dev));
+        super::hostprep::acquire(vid, &busid);
+        let h = match dev.open() {
+            Ok(h) => h,
+            Err(e) => {
+                super::hostprep::release(vid, &busid);
+                return Err(e.into());
+            }
+        };
         let _ = h.set_auto_detach_kernel_driver(true);
         let mut me = Dev {
             h,
@@ -191,5 +200,14 @@ pub(super) fn map_err(e: rusb::Error) -> i32 {
         rusb::Error::Overflow => -75,
         rusb::Error::Io => EIO,
         _ => EPROTO,
+    }
+}
+
+impl Drop for Dev {
+    fn drop(&mut self) {
+        let vid = self.dev.device_descriptor().map(|d| d.vendor_id()).unwrap_or(0);
+        let busid = super::busid(&self.dev);
+        self.release_all(); // hand the interfaces back (the kernel drivers bind again) before anything is started up
+        super::hostprep::release(vid, &busid);
     }
 }

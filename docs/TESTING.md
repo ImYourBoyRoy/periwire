@@ -52,6 +52,9 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 
 ## Not verified yet
 
+- **Daemon control:** the administrator choice and the service buttons through the system's own prompts (polkit, the macOS dialog, UAC) were not clicked: the commands under them were run directly (Linux: `service install --for-user` / `status` / `uninstall` on a systemd host, the socket belongs to the user, no sudo for the user afterwards; Windows: the scheduled task installs, runs and is removed). macOS `service install` (launchd) is unverified.
+- **Restoring `usbmuxd`** after sharing an Apple device is covered by unit tests only: no iPad was on the bus when it was written.
+
 - The macOS disk image's install flow on a clean Mac (Gatekeeper, `self-install` from inside the app bundle), the *Install update* button inside the real window, and `self-update` of a macOS tarball on Apple silicon.
 
 - Sustained pushes to an iPad on a **USB 3 (10 Gbps) port**: 100-200 MB pushes failed after about 35 s three times (the iPad dropped off the host's USB bus; kernel `usb_submit_urb returned -19`,

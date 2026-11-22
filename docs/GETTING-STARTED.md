@@ -20,8 +20,7 @@ Put the `periwire` binary on both computers (see the README). Linux, computer th
 | B (uses), Linux | `sudo periwire daemon` | Attaching devices writes to the kernel's `vhci_hcd`, which needs root. |
 | B (uses), macOS | `periwire daemon` | Needs the Apple USB host-controller entitlement; see [MACOS](MACOS.md). |
 
-To keep it running across reboots: `sudo periwire service install` (Linux), then
-`sudo usermod -aG periwire $USER` and log in again so your user may talk to the root daemon.
+To keep it running across reboots: the desktop app's *Settings > Daemon > Install service*, or `sudo periwire service install` (Linux, macOS, Windows). Only you (`--for-user`, by default whoever ran sudo or pkexec) may control the service; no group or re-login is needed.
 `periwire status` tells you whether the CLI can reach it.
 
 ## 2. Share the device (on A)

@@ -30,6 +30,8 @@ const PAGE_METHODS: &[&str] = &[
     "identity.reset",
     "driver.status",
     "driver.install",
+    "update.check",
+    "update.set",
     "subscribe",
 ];
 
@@ -43,7 +45,7 @@ pub async fn api(method: String, params: Option<Value>) -> Result<Value, Value> 
     c.call(&method, params.unwrap_or(json!({}))).await.map_err(|e| err(&e.code, e.message))
 }
 
-fn find_periwire() -> Option<std::path::PathBuf> {
+pub(crate) fn find_periwire() -> Option<std::path::PathBuf> {
     let name = if cfg!(windows) { "periwire.exe" } else { "periwire" };
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -57,19 +59,83 @@ fn find_periwire() -> Option<std::path::PathBuf> {
 }
 
 /// Start the daemon. `privileged` asks for administrator rights through the OS (needed on Linux to import devices).
+/// The folder the daemon's log, this app's own settings and the daemon's identity live in.
+pub(crate) fn config_dir() -> std::path::PathBuf {
+    std::env::var_os("PERIWIRE_HOME").map(std::path::PathBuf::from).or_else(|| dirs::config_dir().map(|d| d.join("periwire"))).unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
+/// The person using this app: the one who may control a daemon that runs with administrator rights.
+pub(crate) fn current_user() -> String {
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default()
+}
+
+/// Run `periwire <args>` with administrator rights and, when `wait`, until it ends. Linux asks polkit (`pkexec`), macOS the system password dialog
+/// (`osascript`), Windows the UAC prompt. The person is asked by the operating system; this app never sees a password.
+pub(crate) fn run_elevated(bin: &std::path::Path, args: &[String], wait: bool) -> Result<String, Value> {
+    let quiet = || (std::process::Stdio::null(), std::process::Stdio::null());
+    if cfg!(target_os = "linux") {
+        let mut c = std::process::Command::new("pkexec");
+        c.arg(bin).args(args).stdin(std::process::Stdio::null());
+        if wait {
+            let o = c.output().map_err(|e| err("failed", format!("could not ask for administrator rights (is pkexec installed?): {e}")))?;
+            let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)).trim().to_string();
+            return if o.status.success() {
+                Ok(text)
+            } else {
+                Err(err("failed", if o.status.code() == Some(126) || o.status.code() == Some(127) { "administrator rights were not granted".into() } else { text }))
+            };
+        }
+        let (o, e) = quiet();
+        return c.stdout(o).stderr(e).spawn().map(|_| String::new()).map_err(|e| err("failed", format!("could not ask for administrator rights (is pkexec installed?): {e}")));
+    }
+    if cfg!(target_os = "macos") {
+        let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+        let cmd = std::iter::once(quote(&bin.display().to_string())).chain(args.iter().map(|a| quote(a))).collect::<Vec<_>>().join(" ");
+        let shell = if wait { cmd } else { format!("{cmd} >/dev/null 2>&1 &") };
+        let script = format!("do shell script \"{}\" with administrator privileges", shell.replace('\\', "\\\\").replace('"', "\\\""));
+        let o = std::process::Command::new("osascript").arg("-e").arg(script).output().map_err(|e| err("failed", e.to_string()))?;
+        let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)).trim().to_string();
+        return if o.status.success() { Ok(text) } else { Err(err("failed", if text.contains("-128") { "administrator rights were not granted".into() } else { text })) };
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let arglist = args.iter().map(|a| format!("\"{a}\"")).collect::<Vec<_>>().join(" ");
+        let ps = format!(
+            "$p = Start-Process -FilePath '{}' -ArgumentList '{}' -Verb RunAs -WindowStyle Hidden {} ; if ($p) {{ exit $p.ExitCode }}",
+            bin.display().to_string().replace('\'', "''"),
+            arglist.replace('\'', "''"),
+            if wait { "-Wait -PassThru" } else { "-PassThru" }
+        );
+        let o = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &ps]).creation_flags(0x0800_0000).output().map_err(|e| err("failed", e.to_string()))?;
+        return if o.status.success() { Ok(String::new()) } else { Err(err("failed", "administrator rights were not granted, or the program failed".into())) };
+    }
+    #[allow(unreachable_code)]
+    Err(err("failed", "asking for administrator rights is not supported here".into()))
+}
+
+/// Start `periwire daemon` with this app's own rights, or (`privileged`) with administrator rights for the person using this app.
 fn spawn_daemon(privileged: bool) -> Result<(), Value> {
     let bin = find_periwire().ok_or_else(|| err("failed", "could not find the `periwire` program next to this app or in PATH".into()))?;
-    let mut cmd = if privileged && cfg!(target_os = "linux") {
-        let mut c = std::process::Command::new("pkexec");
-        c.arg(&bin);
-        c
-    } else {
-        std::process::Command::new(&bin)
+    if privileged {
+        let mut args = vec!["daemon".to_string()];
+        let user = current_user();
+        if !user.is_empty() && cfg!(unix) {
+            args.extend(["--socket-user".into(), user]); // the daemon belongs to whoever asked for it, however it was elevated
+        }
+        return run_elevated(&bin, &args, false).map(|_| ());
+    }
+    // Its output goes to a file: a daemon nobody can read the log of is one nobody can fix.
+    let log = std::fs::create_dir_all(config_dir()).ok().and_then(|_| std::fs::OpenOptions::new().create(true).append(true).open(config_dir().join("daemon.log")).ok());
+    let (out, errf) = match log.and_then(|l| l.try_clone().ok().map(|c| (l, c))) {
+        Some((a, b)) => (std::process::Stdio::from(a), std::process::Stdio::from(b)),
+        None => (std::process::Stdio::null(), std::process::Stdio::null()),
     };
-    cmd.arg("daemon")
+    std::process::Command::new(&bin)
+        .arg("daemon")
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdout(out)
+        .stderr(errf)
         .spawn()
         .map(|_| ())
         .map_err(|e| err("failed", format!("could not start the daemon: {e}")))
@@ -160,7 +226,7 @@ pub fn app_version() -> &'static str {
 }
 
 /// Run the command line program with `args` and return what it printed (an error carries what it printed when it failed).
-async fn run_cli(args: Vec<&'static str>) -> Result<String, Value> {
+pub(crate) async fn run_cli(args: Vec<&'static str>) -> Result<String, Value> {
     let bin = find_periwire().ok_or_else(|| err("failed", "could not find the `periwire` program next to this app or in PATH".into()))?;
     let out = tokio::task::spawn_blocking(move || std::process::Command::new(bin).args(args).stdin(std::process::Stdio::null()).output())
         .await
@@ -327,5 +393,22 @@ mod tests {
         }
         assert_eq!(std::fs::read_to_string(&out).unwrap().trim(), "started with: --start-daemon");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A button that calls a method the app shell refuses is a bug the user finds first (0.1.2 shipped one: "the window may not call `update.check`").
+    #[test]
+    fn every_daemon_method_the_window_calls_is_one_it_may_call() {
+        for (file, src) in [("app.js", include_str!("../../ui/app.js")), ("settings.js", include_str!("../../ui/settings.js"))] {
+            let mut rest = src;
+            let mut seen = 0;
+            while let Some(i) = rest.find("call(\"") {
+                let r = &rest[i + 6..];
+                let name = &r[..r.find('"').unwrap()];
+                assert!(PAGE_METHODS.contains(&name), "{file} calls `{name}`, which the app shell does not allow: add it to PAGE_METHODS");
+                seen += 1;
+                rest = r;
+            }
+            assert!(seen > 0, "{file}: the scan found no calls, so the check proves nothing");
+        }
     }
 }

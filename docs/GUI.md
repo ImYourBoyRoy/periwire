@@ -33,7 +33,10 @@ is closed and the app can be restarted any time.
   Closing the window hides it to the tray; the tray menu quits (see *Quitting* below).
 - The icon shows whenever a daemon runs, however it was started (see *The taskbar icon follows the daemon* below). Closing the window hides the app to the icon.
 - If the daemon is not running the app offers *Start daemon* (and, on Linux, *Start with admin rights* via `pkexec`).
-- **About** (the last page, and the version line at the bottom of the sidebar) — the version, whether a newer release exists, and the terminal command.
+- **Settings** (the last page; the version line at the bottom of the sidebar opens it):
+  - *Daemon:* what is running and with which rights, and a switch **Off / As me / Administrator**. Opening the app starts the daemon with the app's own rights (no prompt, no setup); *Off* stops it and keeps it from starting with the app; *Administrator* restarts it
+    with administrator rights through the system's own prompt (polkit, the macOS password dialog, UAC), which it needs to import devices on Linux and macOS. *Install service* / *Remove service* put the daemon in the background (systemd, launchd, a scheduled task) so it runs when the app is closed
+    and at boot; it asks the system for your password, only you can control it, and the page shows whether it is installed and running. The app writes the daemon's output to `daemon.log` in the config folder.
   - *Updates:* *Check for updates* asks GitHub (one request, nothing else is sent) and a switch turns the automatic check (every few hours) off. When a newer release exists the sidebar line, the page's badge and a banner say so;
     **Install** runs `periwire self-update`, which checks the download's SHA-256 before it replaces anything, then the app **restarts into the new version** (and so does a daemon this app started; a daemon started another way keeps
     running until you restart it, and the page says so when the versions differ). A copy installed from a package (`.deb`) or the macOS disk image is not changed by the app: the page says how to update it and opens the download page.
@@ -58,7 +61,7 @@ target/release/periwire-gui --hidden           # start minimised to the tray (au
 **The taskbar icon follows the daemon.** The icon belongs to this app, so whenever a daemon starts (from a terminal, by `sudo`, from the
 MCP setup, by the app itself) it starts the app in tray-only mode (`--hidden --follow-daemon`): no window, just the icon, which leaves
 again when that daemon stops unless you opened the window. The app allows one instance, so nothing doubles. A daemon running as a
-system service has no desktop of its own: `sudo periwire service install` also adds an autostart entry (`/etc/xdg/autostart/periwire-tray.desktop`)
+system service has no desktop of its own: `periwire service install` also adds an autostart entry (`/etc/xdg/autostart/periwire-tray.desktop`)
 that shows the icon at login. Turn it off with `periwire daemon --no-tray` or `PERIWIRE_NO_TRAY=1`. Closing the window hides it to the
 icon; the icon's menu has *Open* and *Quit the app* (the daemon keeps running). On a desktop without a tray the window simply closes the app.
 

@@ -50,6 +50,7 @@ pub fn gui_path() -> Option<PathBuf> {
 }
 
 /// The XDG autostart entry that starts the icon at login (for a daemon that runs as a system service).
+#[cfg_attr(not(unix), allow(dead_code))] // only the Linux service install writes this entry (the tests cover it everywhere)
 pub fn autostart_entry(gui: &std::path::Path) -> String {
     format!(
         "[Desktop Entry]\nType=Application\nName=PeriWire (taskbar icon)\nComment=Shows the PeriWire daemon in the taskbar\nExec=\"{}\" --hidden --follow-daemon\nIcon=periwire\nTerminal=false\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",

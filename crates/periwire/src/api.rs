@@ -308,7 +308,15 @@ pub async fn serve(d: Arc<Daemon>, opts: &crate::RunOpts) -> Result<ApiHandle> {
     if crate::daemon::is_root() {
         // Whoever started us with sudo/pkexec owns the socket. Their primary group does not get access: on some systems every
         // user shares one (`users`), which would hand every local user control of a root daemon. A group gets in only by `--socket-group`.
-        let uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok().and_then(|v| v.parse::<u32>().ok());
+        let mut uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok().and_then(|v| v.parse::<u32>().ok());
+        if let Some(u) = &opts.socket_user {
+            let c = std::ffi::CString::new(u.as_str())?;
+            let pw = unsafe { libc::getpwnam(c.as_ptr()) };
+            if pw.is_null() {
+                anyhow::bail!("user `{u}` does not exist");
+            }
+            uid = Some(unsafe { (*pw).pw_uid });
+        }
         let mut gid = None;
         if let Some(g) = &opts.socket_group {
             let c = std::ffi::CString::new(g.as_str())?;

@@ -310,6 +310,7 @@ pub async fn run(opts: crate::RunOpts) -> Result<()> {
             sp.push(s.clone()); // runtime only: --share is not persisted
         }
     }
+    crate::export::hostprep::recover(); // a killed run may have left usbmuxd stopped
     crate::logln!("periwire {VERSION} starting; identity {}", d.fingerprint());
     if d.cfg.lock().unwrap().export.enabled {
         if let Err(e) = d.start_export().await {

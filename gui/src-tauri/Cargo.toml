@@ -9,6 +9,7 @@ license.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+dirs = "5"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }

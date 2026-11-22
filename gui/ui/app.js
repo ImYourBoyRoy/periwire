@@ -1,6 +1,6 @@
 import { call, on, start, startDaemon, demo } from "./api.js";
 import { openPicker } from "./theme.js";
-import { initAbout } from "./about.js";
+import { initSettings } from "./settings.js";
 import { PAGES, BASICS, GLOSSARY, EXPERT } from "./help.js";
 
 // ------------------------------------------------------------------ helpers
@@ -42,6 +42,7 @@ const P = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   down: '<path d="M12 5v12M6 13l6 6 6-6"/>',
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
@@ -127,7 +128,7 @@ const VIEWS = [
   { id: "trust", label: "Trust", icon: "shield", sub: "Only computers you trust can connect to each other." },
   { id: "health", label: "Health", icon: "pulse", sub: "Checks that everything needed is working, with fixes." },
   { id: "logs", label: "Activity", icon: "terminal", sub: "What the daemon is doing right now." },
-  { id: "about", label: "About", icon: "info", sub: "Version, updates and the terminal command." },
+  { id: "settings", label: "Settings", icon: "gear", sub: "The daemon, updates, the terminal command and the version." },
 ];
 
 // ------------------------------------------------------------------ toasts, modals
@@ -333,10 +334,11 @@ function go(id) {
   const t = $("#title"); t.style.transition = "none"; t.style.opacity = 0; t.style.transform = "translateY(6px)"; setText(t, v.label); setText($("#subtitle"), v.sub);
   requestAnimationFrame(() => { t.style.transition = "all .45s var(--ease)"; t.style.opacity = 1; t.style.transform = "none"; });
   const i = VIEWS.findIndex((x) => x.id === id); const b = nav.children[i + 1]; pill.style.transform = `translateY(${b.offsetTop}px)`;
+  setTimeout(() => { if (S.view === id) pill.style.transform = `translateY(${b.offsetTop}px)`; }, 350); // once fonts and layout have settled (a page opened by its link)
   renderActions(); if (id === "health" && !S.doctor) runDoctor(); if (id === "logs") scrollLogs(true);
   try { location.hash = id; } catch {}
   renderAll();
-  document.dispatchEvent(new Event("periwire:view")); // about.js hides its banner on its own page
+  document.dispatchEvent(new Event("periwire:view")); // settings.js hides its banner on its own page
 }
 function renderActions() {
   const a = $("#actions"); const nodes = [];
@@ -639,11 +641,13 @@ function renderChrome() {
   dot.className = "dot " + (S.connected === false ? "bad" : S.connected === null ? "warn" : st && st.export.state === "error" ? "warn" : "ok");
   setText($("#daemon-title"), S.connected ? "Daemon running" : S.connected === null ? "Connecting…" : "Daemon offline");
   setText($("#daemon-sub"), S.connected && st ? `${st.hostname} · up ${dur(st.uptime)}` : "not reachable");
-  const off = $("#offline"); off.classList.toggle("show", S.connected === false); // not while the first answer is still on its way
+  const off = $("#offline"); off.classList.toggle("show", S.connected === false && S.view !== "settings"); // not while the first answer is still on its way, nor on the settings page
   if (S.connected === false && !off.firstChild) {
-    off.append(h("div", { class: "box" }, h("div", { class: "big", html: ic("plug") }), h("h2", {}, "The periwire daemon isn't running"), h("p", {}, "This app is the control panel; the daemon does the work. Start it to share and use devices."),
-      h("div", { class: "row", style: "justify-content:center" }, h("button", { class: "btn primary", onclick: () => startDaemon(false).then(() => toast("Starting…", "info", 2500), (e) => toast(e.message, "bad", 7000)) }, "Start daemon"), h("button", { class: "btn", onclick: () => startDaemon(true).then(() => toast("Waiting for authorisation…", "info", 3000), (e) => toast(e.message, "bad", 7000)) }, "Start with admin rights")),
-      h("p", { class: "faint", style: "margin:14px 0 0;font-size:12.5px" }, "Admin rights are needed to import devices on Linux. For an always-on setup, install the service:"), h("code", {}, "sudo periwire service install")));
+    const go1 = (admin) => startDaemon(admin).then(() => toast(admin ? "Waiting for your password…" : "Starting…", "info", 3500), (e) => toast(e.message, "bad", 7000));
+    off.append(h("div", { class: "box" }, h("div", { class: "big", html: ic("plug") }), h("h2", {}, "The daemon isn't running"),
+      h("p", {}, "PeriWire starts it for you when the app opens, with your own rights. It is not running now: it may have been turned off, or it failed to start."),
+      h("div", { class: "row", style: "justify-content:center;flex-wrap:wrap" }, h("button", { class: "btn primary", onclick: () => go1(false) }, "Start daemon"), h("button", { class: "btn", onclick: () => go1(true) }, "Start as administrator"), h("button", { class: "btn ghost", onclick: () => go("settings") }, "Open settings")),
+      h("p", { class: "faint", style: "margin:14px 0 0;font-size:12.5px" }, "Run it in the background all the time from Settings > Daemon.")));
   }
 }
 function renderAll() {
@@ -662,7 +666,7 @@ async function setConnected(c) {
 }
 on("status", (st) => { S.status = st; updateRates(st); if (!S.connected) setConnected(true); renderAll(); });
 on("connection", setConnected);
-initAbout({ S, h, $, esc, modal, toast, setText, vEls, go, ic }); // version, About dialog, update banner (about.js)
+initSettings({ S, h, $, esc, modal, toast, setText, vEls, go, ic }); // settings page, version line, update banner (settings.js)
 on("event", (ev) => { if (ev.event === "log") addLog(ev.data.line); });
 on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);

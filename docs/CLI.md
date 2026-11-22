@@ -42,7 +42,8 @@ control socket, and re-attaches remembered `--auto` connections.
 | `--no-tray` | Do not start the taskbar icon (also `PERIWIRE_NO_TRAY=1`). |
 | `--share SPEC` | Share a device for this run only (repeatable). |
 | `--daemon-socket PATH` | Where to create the control socket. |
-| `--socket-group GROUP` | Group allowed to use the socket (root only). By default the user who ran `sudo`/`pkexec` owns it. |
+| `--socket-user USER` | User allowed to use the socket (root only; a service has nobody who started it, so it is told). By default the user who ran `sudo`/`pkexec` owns it. |
+| `--socket-group GROUP` | Group allowed to use the socket (root only), in addition. |
 | `--socket-mode OCTAL` | Socket permissions, default `660`. |
 
 Stops cleanly on SIGINT/SIGTERM or `periwire stop`: imports are ejected and shared devices go back to the host.
@@ -112,6 +113,12 @@ new fingerprint (`trust add`); the exporter restarts and current sessions drop. 
 ### `periwire doctor`
 Health checks with fixes: identity, USB access, permissions, importer support, daemon, exporter, trusted peers, each
 shared device (including "mounted locally"), and competing software such as VirtualHere. Exit code 4 on failures.
+
+### `periwire service install [--for-user USER]` · `service uninstall` · `service status`
+Runs the daemon as a system service: a systemd unit on Linux, a launchd daemon on macOS, a scheduled task (at logon, highest privileges) on Windows. `install` and `uninstall` need administrator rights
+(`sudo`, or the desktop app asks the system for them); `status` does not (`--json`: `{kind, installed, enabled, active, supported}`). The service runs with administrator rights, so it can import devices, and **only `--for-user`
+(by default whoever ran sudo or pkexec) may control it**: the control socket belongs to that user, no group or new login is needed. It keeps its own identity (`/var/lib/periwire` on Linux), so other computers trust it once.
+Installing over an older unit restarts it so the new settings apply.
 
 ### `periwire self-install [-y] [--dry-run] [--no-shell]` · `periwire self-uninstall [-y]`
 Makes `periwire` work in every shell, and undoes it exactly. Nothing but a package puts the command on your PATH, so a copy of the app that was not installed

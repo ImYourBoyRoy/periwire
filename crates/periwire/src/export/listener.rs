@@ -74,6 +74,7 @@ pub async fn serve(shared: Arc<Shared>, listener: TcpListener, mut stop: watch::
     // Devices still waiting for an importer go back to this machine now (the daemon is stopping).
     let held = shared.parked.lock().unwrap().drain();
     drop(held);
+    super::hostprep::restore_all(); // whatever is still stepped aside comes back, even if a device was never released properly
     Ok(())
 }
 

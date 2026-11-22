@@ -379,15 +379,16 @@ pub async fn trust_host(b: &mut Backend, addr: &str, yes: bool, json_out: bool) 
 
 // ---------- service files ----------
 
-pub fn service_text(user_mode: bool) -> String {
+pub fn service_text(user_mode: bool, socket_user: Option<&str>) -> String {
     let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "/usr/local/bin/periwire".into());
+    let user_args = socket_user.map(|u| format!("<string>--socket-user</string><string>{u}</string>")).unwrap_or_default();
     if cfg!(target_os = "macos") {
         return format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>com.glassprovidence.periwire.daemon</string>
-  <key>ProgramArguments</key><array><string>{exe}</string><string>daemon</string></array>
+  <key>ProgramArguments</key><array><string>{exe}</string><string>daemon</string>{user_args}</array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
 </dict></plist>
@@ -397,7 +398,7 @@ pub fn service_text(user_mode: bool) -> String {
     if user_mode {
         format!("[Unit]\nDescription=periwire USB forwarding daemon (user)\n\n[Service]\nExecStart={exe} daemon\nRestart=on-failure\nTimeoutStopSec=20\n\n[Install]\nWantedBy=default.target\n")
     } else {
-        format!("[Unit]\nDescription=periwire USB forwarding daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart={exe} daemon --socket-group periwire\nEnvironment=PERIWIRE_HOME=/var/lib/periwire\nStateDirectory=periwire\nRestart=on-failure\nKillSignal=SIGTERM\nTimeoutStopSec=20\n\n[Install]\nWantedBy=multi-user.target\n")
+        format!("[Unit]\nDescription=periwire USB forwarding daemon\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart={exe} daemon{}\nEnvironment=PERIWIRE_HOME=/var/lib/periwire\nStateDirectory=periwire\nRestart=on-failure\nKillSignal=SIGTERM\nTimeoutStopSec=20\n\n[Install]\nWantedBy=multi-user.target\n", socket_user.map(|u| format!(" --socket-user {u}")).unwrap_or_default())
     }
 }
 

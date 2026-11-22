@@ -3,6 +3,21 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [0.1.4] — 2026-11-21
+
+Fixes the update check, makes the app run and control the daemon, and puts an iPad back on your computer after sharing.
+
+### Fixed
+- **Check for updates was blocked in the real window** (0.1.2 and 0.1.3 showed "the window may not call `update.check`"): the app shell's list of allowed calls missed it. A test now reads the page's code and fails if any call it makes is not allowed.
+- **Sharing an iPhone or iPad no longer leaves it stranded on this computer.** On Linux a daemon with administrator rights steps `usbmuxd` aside when it claims an Apple device (it held the device, so sharing failed with "Resource busy") and starts it again when the last Apple device is released
+  (session ended, unshared, daemon stopped), which makes it look at the bus again; a killed daemon puts it back at its next start. Before, nothing started it again and the device never reappeared in the file manager.
+
+### Changed
+- **The app runs the daemon for you.** Opening it starts the daemon with the app's own rights (unless you switched that off); the "daemon isn't running" popup no longer carries install instructions. The daemon's output goes to `daemon.log` in the config folder.
+- **Settings page** (replaces About): *Daemon* with **Off / As me / Administrator** (the administrator choice uses the system's own prompt) and **Install service / Remove service**, then updates and the terminal command.
+- **`periwire service`:** `install --for-user USER`, `uninstall` and a new `status` (`--json`) on Linux (systemd), macOS (launchd, untested) and Windows (scheduled task). The service's control socket belongs to the user it was installed for (`--socket-user`), replacing the shared `periwire` group and the
+  "add yourself to a group and log in again" step; installing over an older unit restarts it.
+
 ## [0.1.3] — 2026-11-21
 
 The About page and the in-app update, done properly.
@@ -109,6 +124,7 @@ First public release.
 - macOS and Windows programs are not signed with a paid developer certificate (macOS: right-click > Open the first time).
 - See [platform status](docs/PLATFORMS.md) and [what has been tested](docs/TESTING.md).
 
+[0.1.4]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.4
 [0.1.3]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.1

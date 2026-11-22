@@ -156,6 +156,7 @@ const ECONNRESET: i32 = -104;
 
 mod dev;
 mod devices;
+pub(crate) mod hostprep;
 mod import;
 mod journal;
 mod listener;

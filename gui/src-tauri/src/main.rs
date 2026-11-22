@@ -3,6 +3,7 @@
 // tray icon in sync and relays daemon events to the window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod control;
 mod daemon;
 #[cfg(target_os = "linux")]
 mod launcher;
@@ -128,7 +129,12 @@ fn main() {
             daemon::terminal_setup,
             daemon::self_update,
             daemon::update_support,
-            daemon::cli_on_path
+            daemon::cli_on_path,
+            control::daemon_info,
+            control::daemon_set_mode,
+            control::service_status,
+            control::service_install,
+            control::service_uninstall
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -197,8 +203,8 @@ fn main() {
                     let _ = w.hide();
                 }
             }
-            if std::env::args().any(|a| a == "--start-daemon") {
-                // after an update: the daemon this app had started comes back, now in the new version
+            // Opening the app runs the daemon, with the rights the app itself has (unless it was started by a daemon, or the person switched this off).
+            if !std::env::args().any(|a| a == "--follow-daemon") && (control::autostart() || std::env::args().any(|a| a == "--start-daemon")) {
                 tauri::async_runtime::spawn(async {
                     let _ = ensure_daemon(false).await;
                 });
@@ -210,6 +216,15 @@ fn main() {
                 tauri::async_runtime::spawn(async move {
                     let r = daemon::self_update_with(h, vec!["--to", "0.1.2", "--force"]).await;
                     eprintln!("selftest self_update: {r:?}");
+                });
+            }
+            #[cfg(debug_assertions)]
+            if let Some(mode) = std::env::var("PERIWIRE_GUI_SELFTEST").ok().and_then(|v| v.strip_prefix("mode:").map(str::to_string)) {
+                // debug builds only: switch the daemon's mode once without a click (the Settings page's buttons call the same command)
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(3)).await; // after the automatic start
+                    let r = control::daemon_set_mode(mode).await;
+                    eprintln!("selftest daemon_set_mode: {r:?}");
                 });
             }
             tauri::async_runtime::spawn(watch_daemon(handle));

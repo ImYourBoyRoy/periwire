@@ -50,6 +50,9 @@ pub(crate) enum Cmd {
         /// Group allowed to use the control socket (when running as root).
         #[arg(long, value_name = "GROUP")]
         socket_group: Option<String>,
+        /// User allowed to use the control socket (when running as root: a service has no one who started it, so it is told).
+        #[arg(long, value_name = "USER")]
+        socket_user: Option<String>,
         /// Socket permissions in octal (default 660).
         #[arg(long, value_name = "MODE")]
         socket_mode: Option<String>,
@@ -272,10 +275,16 @@ pub(crate) enum ServiceCmd {
         #[arg(long)]
         user: bool,
     },
-    /// Install and start the system service (Linux, needs root).
-    Install,
-    /// Stop and remove the system service (Linux, needs root).
+    /// Install and start the system service (needs administrator rights). It runs as root and only `--for-user` may control it.
+    Install {
+        /// The user who may control the service (default: whoever ran sudo or pkexec).
+        #[arg(long, value_name = "USER")]
+        for_user: Option<String>,
+    },
+    /// Stop and remove the system service (needs administrator rights).
     Uninstall,
+    /// Is the service installed, enabled and running? (no rights needed)
+    Status,
 }
 
 #[cfg(test)]
