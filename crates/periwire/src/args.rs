@@ -166,6 +166,9 @@ pub(crate) enum Cmd {
         /// Reinstall even if this is already the latest version.
         #[arg(long)]
         force: bool,
+        /// Only say how this copy can be updated (a folder install, an AppImage, or a package that updates its own way); no network.
+        #[arg(long)]
+        status: bool,
     },
     /// Check whether a newer PeriWire has been released (one request to GitHub; installs nothing).
     Update,

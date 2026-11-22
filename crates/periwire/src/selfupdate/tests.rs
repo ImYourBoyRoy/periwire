@@ -109,3 +109,9 @@ fn a_folder_install_is_replaced_from_a_mirror_and_a_bad_checksum_changes_nothing
     assert!(run().unwrap_err().to_string().contains("no checksum"), "no checksum, no install");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn the_support_report_says_how_each_kind_updates() {
+    let s = support();
+    assert!(s["supported"].is_boolean() && s["kind"].is_string(), "{s}");
+}

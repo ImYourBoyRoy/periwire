@@ -135,6 +135,34 @@ pub fn cleanup_old() {
     }
 }
 
+/// How this copy can be updated, as `{kind, supported, reason?, replaces}`. `kind`: folder, appimage, package or bundle.
+pub fn support() -> serde_json::Value {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_file());
+    match target(&exe, appimage) {
+        Target::Folder { files } => json!({"kind": "folder", "supported": true, "replaces": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>()}),
+        Target::AppImage(p) => json!({"kind": "appimage", "supported": true, "replaces": [p.display().to_string()]}),
+        Target::Elsewhere(why) => json!({"kind": if why.contains("app bundle") { "bundle" } else { "package" }, "supported": false, "reason": why, "replaces": []}),
+    }
+}
+
+/// `periwire self-update --status`
+pub fn print_status(json_out: bool) -> Result<i32> {
+    let s = support();
+    if json_out {
+        println!("{s}");
+    } else if s["supported"] == json!(true) {
+        println!(
+            "this copy can update itself ({}): `periwire self-update` replaces {}",
+            s["kind"].as_str().unwrap_or(""),
+            s["replaces"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default()
+        );
+    } else {
+        println!("this copy updates another way: {}", s["reason"].as_str().unwrap_or(""));
+    }
+    Ok(0)
+}
+
 pub fn self_update(yes: bool, dry_run: bool, to: Option<String>, force: bool, json_out: bool) -> Result<i32> {
     let current = env!("CARGO_PKG_VERSION");
     let exe = std::env::current_exe().context("cannot tell where this program is")?;

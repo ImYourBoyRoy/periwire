@@ -41,6 +41,7 @@ const P = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
   zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   down: '<path d="M12 5v12M6 13l6 6 6-6"/>',
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
@@ -126,6 +127,7 @@ const VIEWS = [
   { id: "trust", label: "Trust", icon: "shield", sub: "Only computers you trust can connect to each other." },
   { id: "health", label: "Health", icon: "pulse", sub: "Checks that everything needed is working, with fixes." },
   { id: "logs", label: "Activity", icon: "terminal", sub: "What the daemon is doing right now." },
+  { id: "about", label: "About", icon: "info", sub: "Version, updates and the terminal command." },
 ];
 
 // ------------------------------------------------------------------ toasts, modals
@@ -219,7 +221,7 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === " " || e.key === "Enter") && e.target.classList?.contains("switch")) { e.preventDefault(); e.target.click(); }
   if (e.key === "Escape") { const s = $(".scrim"); if (s) s._close(null); else { const hs = $(".help-scrim"); if (hs) hs._close(); } }
   if (e.key === "?" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName) && !e.metaKey && !e.ctrlKey) openHelp();
-  if (!/INPUT|TEXTAREA/.test(document.activeElement.tagName) && !e.metaKey && !e.ctrlKey && /^[1-6]$/.test(e.key)) go(VIEWS[+e.key - 1].id);
+  if (!/INPUT|TEXTAREA/.test(document.activeElement.tagName) && !e.metaKey && !e.ctrlKey && /^[1-7]$/.test(e.key)) go(VIEWS[+e.key - 1].id);
 });
 async function act(key, fn, okMsg) {
   if (S.busy.has(key)) return; S.busy.add(key); renderAll();
@@ -334,6 +336,7 @@ function go(id) {
   renderActions(); if (id === "health" && !S.doctor) runDoctor(); if (id === "logs") scrollLogs(true);
   try { location.hash = id; } catch {}
   renderAll();
+  document.dispatchEvent(new Event("periwire:view")); // about.js hides its banner on its own page
 }
 function renderActions() {
   const a = $("#actions"); const nodes = [];
@@ -659,7 +662,7 @@ async function setConnected(c) {
 }
 on("status", (st) => { S.status = st; updateRates(st); if (!S.connected) setConnected(true); renderAll(); });
 on("connection", setConnected);
-initAbout({ S, h, $, esc, modal, toast, setText }); // version, About dialog, update banner (about.js)
+initAbout({ S, h, $, esc, modal, toast, setText, vEls, go, ic }); // version, About dialog, update banner (about.js)
 on("event", (ev) => { if (ev.event === "log") addLog(ev.data.line); });
 on("toast", (t) => toast(t.message, t.ok ? "ok" : "bad"));
 setInterval(async () => { if (S.connected && (S.view === "share" || S.view === "overview")) { try { S.devices = await call("devices"); renderAll(); } catch {} } }, 3000);

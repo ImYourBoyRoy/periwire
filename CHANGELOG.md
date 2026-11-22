@@ -3,6 +3,16 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [0.1.3] — 2026-11-21
+
+The About page and the in-app update, done properly.
+
+### Changed
+- **A real About page** replaces the cramped dialog: the version, an update status chip with one clear button (*Check for updates* / *Install x.y.z*), the automatic-check switch, how this copy updates, and the terminal command with *Set up* / *Undo*. The sidebar's version line shows
+  "Up to date" or "Update x.y.z available" and the page has a badge.
+- **Install update now finishes the job:** after `periwire self-update` replaced the files the app restarts into the new version (as does a daemon the app started), instead of leaving you on the old build. A package or the macOS disk image gets instructions and a download button.
+  `periwire self-update --status` reports how a copy can be updated.
+
 ## [0.1.2] — 2026-11-21
 
 Adds a version display, an update check and in-place updates, the `periwire` command in every shell, and one-line installers. Everyone on 0.1.1 can update with the app's *About* dialog or by downloading it.
@@ -99,6 +109,7 @@ First public release.
 - macOS and Windows programs are not signed with a paid developer certificate (macOS: right-click > Open the first time).
 - See [platform status](docs/PLATFORMS.md) and [what has been tested](docs/TESTING.md).
 
+[0.1.3]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ImYourBoyRoy/periwire/releases/tag/v0.1.0

@@ -120,7 +120,16 @@ fn main() {
                 show_main(app);
             }
         }))
-        .invoke_handler(tauri::generate_handler![daemon::api, daemon::start_daemon, daemon::app_version, daemon::open_url, daemon::terminal_setup, daemon::self_update])
+        .invoke_handler(tauri::generate_handler![
+            daemon::api,
+            daemon::start_daemon,
+            daemon::app_version,
+            daemon::open_url,
+            daemon::terminal_setup,
+            daemon::self_update,
+            daemon::update_support,
+            daemon::cli_on_path
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let (items, _, _) = tray_view(None, false);
@@ -187,6 +196,21 @@ fn main() {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
                 }
+            }
+            if std::env::args().any(|a| a == "--start-daemon") {
+                // after an update: the daemon this app had started comes back, now in the new version
+                tauri::async_runtime::spawn(async {
+                    let _ = ensure_daemon(false).await;
+                });
+            }
+            #[cfg(debug_assertions)]
+            if std::env::var("PERIWIRE_GUI_SELFTEST").as_deref() == Ok("update") {
+                // debug builds only: run the update flow once without a click, so the glue (command line, restart) can be tested against a mirror
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let r = daemon::self_update_with(h, vec!["--to", "0.1.2", "--force"]).await;
+                    eprintln!("selftest self_update: {r:?}");
+                });
             }
             tauri::async_runtime::spawn(watch_daemon(handle));
             Ok(())

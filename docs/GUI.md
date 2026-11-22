@@ -33,11 +33,12 @@ is closed and the app can be restarted any time.
   Closing the window hides it to the tray; the tray menu quits (see *Quitting* below).
 - The icon shows whenever a daemon runs, however it was started (see *The taskbar icon follows the daemon* below). Closing the window hides the app to the icon.
 - If the daemon is not running the app offers *Start daemon* (and, on Linux, *Start with admin rights* via `pkexec`).
-- **Version and updates** — the version is at the bottom of the sidebar; click it for *About* (app and daemon versions, a warning when they differ after an
-  update, *Check now*, and the switch for the automatic check). When a newer release exists a banner says so with *Install update* (runs `periwire self-update`, which checks the download's SHA-256 first;
-  a package or the macOS app bundle gets instructions instead) and *What's new* (the release page). Nothing is downloaded until you click. The check is one request to github.com now and then; turn it off in *About* or with `"update_check": false`.
-- **Terminal command** — *About* has *Set up the periwire command* (and *Undo*): the same as `periwire self-install` / `self-uninstall` (PATH and shell profiles), for a copy that was not installed from a package.
-- Keyboard: `1`–`6` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
+- **About** (the last page, and the version line at the bottom of the sidebar) — the version, whether a newer release exists, and the terminal command.
+  - *Updates:* *Check for updates* asks GitHub (one request, nothing else is sent) and a switch turns the automatic check (every few hours) off. When a newer release exists the sidebar line, the page's badge and a banner say so;
+    **Install** runs `periwire self-update`, which checks the download's SHA-256 before it replaces anything, then the app **restarts into the new version** (and so does a daemon this app started; a daemon started another way keeps
+    running until you restart it, and the page says so when the versions differ). A copy installed from a package (`.deb`) or the macOS disk image is not changed by the app: the page says how to update it and opens the download page.
+  - *Terminal command:* whether `periwire` is on your PATH, with *Set up* / *Undo* (`periwire self-install` / `self-uninstall`: PATH and shell profiles).
+- Keyboard: `1`–`7` switch pages, `Esc` closes dialogs. Follows the OS light/dark setting; respects reduced motion.
 
 - **Names people recognise.** Devices show their label (hover a card and click the pencil to rename one), or product name, plus a
   kind such as *Storage drive*, *Android device*, *iPad*, *Apple device in DFU mode*. Connection cards show the same, with the raw

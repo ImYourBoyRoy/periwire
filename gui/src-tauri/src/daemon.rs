@@ -180,10 +180,70 @@ pub async fn terminal_setup(undo: bool) -> Result<String, Value> {
     run_cli(if undo { vec!["self-uninstall", "--yes"] } else { vec!["self-install", "--yes"] }).await
 }
 
-/// The window's "Install update" button: the command line's `self-update`, which checks the download's SHA-256 before it replaces anything.
+/// How this copy can be updated (`periwire self-update --status`): `{kind, supported, reason?, replaces}`.
 #[tauri::command]
-pub async fn self_update() -> Result<String, Value> {
-    run_cli(vec!["self-update", "--yes"]).await
+pub async fn update_support() -> Result<String, Value> {
+    run_cli(vec!["--json", "self-update", "--status"]).await
+}
+
+/// Where `periwire` is on this computer's PATH, if anywhere (the window shows whether the terminal command is set up).
+#[tauri::command]
+pub fn cli_on_path() -> Option<String> {
+    let name = if cfg!(windows) { "periwire.exe" } else { "periwire" };
+    std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(name)).find(|f| f.is_file())).map(|f| f.display().to_string())
+}
+
+/// Start the app again from `gui` once this process has gone (a second copy would only hand over to this one), optionally starting the daemon it owned.
+fn relaunch(gui: &std::path::Path, start_daemon: bool) {
+    let extra = if start_daemon { "--start-daemon" } else { "" };
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut c = std::process::Command::new("sh");
+        c.arg("-c").arg("sleep 2; exec \"$0\" $1").arg(gui).arg(extra).process_group(0);
+        let _ = c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let line = format!("ping -n 3 127.0.0.1 >NUL & start \"\" \"{}\" {extra}", gui.display());
+        let _ = std::process::Command::new("cmd").arg("/C").raw_arg(format!("\"{line}\"")).creation_flags(0x0800_0000).spawn();
+    }
+}
+
+/// The window's "Install update": the command line's `self-update` (which checks the download's SHA-256 before it replaces anything), then the app
+/// starts again from the new files, and so does the daemon if this app had started it. A daemon started elsewhere keeps running until its owner restarts it.
+#[tauri::command]
+pub async fn self_update(app: AppHandle) -> Result<String, Value> {
+    self_update_with(app, vec![]).await
+}
+
+/// `self_update` with extra arguments for the command line (the debug-build self-test uses `--to` and `--force`).
+pub(crate) async fn self_update_with(app: AppHandle, extra: Vec<&'static str>) -> Result<String, Value> {
+    let gui = std::env::var_os("APPIMAGE").map(std::path::PathBuf::from).or_else(|| std::env::current_exe().ok());
+    let owned = OWNER.lock().unwrap().has_daemon();
+    let mut args = vec!["self-update", "--yes"];
+    args.extend(extra);
+    let text = run_cli(args).await?;
+    if owned {
+        if let Ok(mut c) = Client::connect_default().await {
+            let _ = c.call("shutdown", json!({})).await;
+            for _ in 0..30 {
+                if Client::connect_default().await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+    }
+    if let Some(gui) = gui {
+        relaunch(&gui, owned);
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await; // the answer reaches the window first
+        app.exit(0);
+    });
+    Ok(text)
 }
 
 /// Is this a link the window may ask the system browser to open? Only PeriWire's own releases, with plain URL characters.
@@ -247,5 +307,25 @@ mod tests {
         ] {
             assert!(!is_release_link(bad), "{bad}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_app_starts_again_after_it_has_gone_and_passes_the_daemon_flag_on() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("pw-relaunch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (script, out) = (dir.join("fake-gui"), dir.join("args.txt"));
+        std::fs::write(&script, format!("#!/bin/sh\necho \"started with: $*\" > '{}'\n", out.display())).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        relaunch(&script, true);
+        for _ in 0..60 {
+            if out.exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(std::fs::read_to_string(&out).unwrap().trim(), "started with: --start-daemon");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
