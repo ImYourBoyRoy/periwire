@@ -100,9 +100,9 @@ export function initAbout({ S, h, $, esc, modal, toast, setText, vEls, go, ic })
     setText(el("ab-up-title"), st.phase === "installing" ? "Installing the update…" : newer ? `PeriWire ${u.latest} is available` : u ? "You're up to date" : st.error ? "Could not check for updates" : "Checking for updates…");
     const how = !st.support ? "" : st.support.supported ? (st.support.kind === "appimage" ? "Updates replace this AppImage." : "Updates replace the program files here.") : st.support.reason;
     setText(el("ab-up-sub"), [u ? `You have ${u.current}${newer ? `, the latest is ${u.latest}` : ""}.` : "", when(st.checkedAt) ? `Last checked ${when(st.checkedAt)}.` : "", how].filter(Boolean).join(" "));
-    el("ab-check").disabled = busy; el("ab-notes").hidden = !u; el("ab-notes").textContent = newer ? "What's new" : "Release notes";
+    el("ab-check").disabled = busy; el("ab-notes").hidden = !u; setText(el("ab-notes"), newer ? "What's new" : "Release notes");
     el("ab-progress").hidden = st.phase !== "installing";
-    const er = el("ab-error"); er.hidden = !st.error || st.phase === "installing"; if (!er.hidden) er.textContent = st.error;
+    const er = el("ab-error"); er.hidden = !st.error || st.phase === "installing"; if (!er.hidden) setText(er, st.error);
     const auto = el("ab-auto"); auto.classList.toggle("on", S.status?.update_check !== false); auto.setAttribute("aria-checked", String(S.status?.update_check !== false));
     // terminal
     const on = st.setUp || !!st.cli;
