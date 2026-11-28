@@ -30,6 +30,8 @@ pub struct Shared {
     pub specs: RwLock<Vec<String>>,
     /// Shares the owner write-protects for every importer (subset of `specs`).
     pub ro_specs: RwLock<Vec<String>>,
+    /// Whether isochronous transfers (camera video, audio) are carried; `export.isochronous` in the config.
+    pub iso: AtomicBool,
     pub sessions: Mutex<HashMap<u64, Arc<Session>>>,
     /// User-chosen names, keyed by `vid:pid[:serial]` (see `device_key`).
     pub labels: RwLock<std::collections::BTreeMap<String, String>>,
@@ -61,6 +63,8 @@ pub struct Session {
     pub urbs: AtomicU64,
     /// The importer asked for write protection (enforced by `guard`).
     pub read_only: bool,
+    /// Isochronous transfers are carried in this session (see `Shared::iso`).
+    iso: bool,
     /// Certificate fingerprint of the importer, and whether it asked to be waited for after a lost connection.
     fp: String,
     resume: bool,
@@ -89,6 +93,7 @@ impl Shared {
         Arc::new(Shared {
             specs: RwLock::new(specs),
             ro_specs: RwLock::new(ro_specs),
+            iso: AtomicBool::new(true),
             sessions: Mutex::new(HashMap::new()),
             labels: RwLock::new(labels),
             cache: Mutex::new(HashMap::new()),
@@ -158,6 +163,9 @@ mod dev;
 mod devices;
 pub(crate) mod hostprep;
 mod import;
+mod iso;
+mod iso_pump;
+mod isoinfo;
 mod journal;
 mod listener;
 mod session;
@@ -167,6 +175,7 @@ mod workers;
 use dev::*;
 pub use devices::*;
 use import::*;
+use iso::*;
 use journal::*;
 pub use listener::*;
 use session::*;
@@ -191,6 +200,14 @@ mod tests {
         assert_eq!(got, ["/media/u/My Drive", "/mnt/whole", "/mnt/secret", "/mnt/nv"], "sdba1 is not a partition of sdb, nvme1n10 not of nvme1n1");
         assert_eq!(unescape_mount_field("a\\134b\\011c"), "a\\b\tc");
         assert_eq!(unescape_mount_field("trailing\\04"), "trailing\\04", "an incomplete escape stays as written");
+    }
+
+    #[test]
+    fn interfaces_are_handed_back_last_first_so_a_class_driver_finds_its_other_interfaces_free() {
+        // A camera's driver binds the control interface (0) and then claims the streaming one (1) itself.
+        assert_eq!(release_order(&[0, 1]), vec![1, 0]);
+        assert_eq!(release_order(&[0, 1, 2, 3]), vec![3, 2, 1, 0]);
+        assert!(release_order(&[]).is_empty());
     }
 
     #[test]

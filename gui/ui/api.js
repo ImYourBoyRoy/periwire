@@ -51,6 +51,11 @@ const sim = (() => {
     "media-pc.local:3241": [
       R("3-2", "1050", "0407", "Yubico", "YubiKey 5 NFC", "security-key", "Security key", "full (12 Mb/s)", "Studio YubiKey"),
       R("3-4", "0bda", "8153", "Realtek", "USB 10/100/1000 LAN", "network", "Network adapter", "super (5 Gb/s)"),
+      Object.assign(R("3-5", "046d", "0892", "Logitech", "HD Webcam C920", "camera", "Camera / webcam", "high (480 Mb/s)"), { iso: { kind: "video", in_kbps: 196608, out_kbps: 0 } }),
+    ],
+    "wifi-nuc.local:3241": [
+      Object.assign(R("1-4", "046d", "0892", "Logitech", "HD Webcam C920", "camera", "Camera / webcam", "high (480 Mb/s)"), { iso: { kind: "video", in_kbps: 196608, out_kbps: 0 } }),
+      Object.assign(R("1-5", "0b0e", "0412", "Jabra", "Jabra Speak 510", "audio", "Audio device", "full (12 Mb/s)"), { iso: { kind: "audio", in_kbps: 1536, out_kbps: 1536 } }),
     ],
     "build-mac.local:3241": [
       R("1-2", "05ac", "12a8", "Apple Inc.", "iPhone", "apple-iphone", "iPhone", "high (480 Mb/s)", "Sam's iPhone"),
@@ -78,6 +83,18 @@ const sim = (() => {
       case "share.add": { const d = devices.find((d) => specOf(d).includes(p.spec)); if (!d) fail("invalid", `no device matches ${p.spec}`); if (d.mounted.length) log(`warning: ${d.busid} is mounted locally`); const ro = !!p.read_only; const changed = !!d.shared_read_only !== ro; d.shared = true; d.shared_read_only = ro; let kicked = 0; if (changed && d.in_use_by) { kicked = 1; d.in_use_by = null; st.sessions = st.sessions.filter((s) => s.busid !== d.busid); } log(`sharing ${p.spec}${ro ? " (read-only for everyone)" : ""}`); return { spec: p.spec, read_only: ro, disconnected: kicked }; }
       case "share.remove": { const d = devices.find((d) => specOf(d).includes(p.spec)); if (!d) fail("not_found", `${p.spec} is not shared`); d.shared = false; d.shared_read_only = false; const had = d.in_use_by; d.in_use_by = null; st.sessions = st.sessions.filter((s) => s.busid !== d.busid); log(`stopped sharing ${p.spec}`); return { spec: p.spec, disconnected: had ? 1 : 0 }; }
       case "remote.list": { await delay(500); const a = p.addr.includes(":") ? p.addr : p.addr + ":3241"; if (!remote[a]) { if (a.startsWith("untrusted")) fail("failed", "TLS handshake failed (is that machine's fingerprint trusted? see `periwire trust --help`)"); fail("failed", `connecting to ${a}: connection refused`); } return remote[a]; }
+      case "link.test": {
+        await delay(p.full ? 5200 : 1600); const ad = p.addr.includes(":") ? p.addr : p.addr + ":3241";
+        if (!remote[ad]) fail("failed", `connecting to ${ad}: connection refused`);
+        const weak = /wifi|slow/i.test(ad), dev = p.busid && remote[ad].find((d) => d.busid === p.busid);
+        const rtt = weak ? { samples: 20, min_ms: 3.1, avg_ms: 14.2, p50_ms: 9.8, p95_ms: 14.2, max_ms: 88.4, jitter_ms: 11.6, stalls: 1 } : { samples: 20, min_ms: 0.6, avg_ms: 0.9, p50_ms: 0.8, p95_ms: 1.4, max_ms: 2.1, jitter_ms: 0.3, stalls: 0 };
+        const need = dev && dev.iso ? { kind: dev.iso.kind, in_kbps: dev.iso.in_kbps, out_kbps: dev.iso.out_kbps } : null;
+        const rep = { addr: ad, seconds: p.full ? 6.1 : 1.8, rtt, stream: { rate_kbps: need ? 40000 : 8000, interval_ms: 4, expected: 250, received: 250, p50_ms: weak ? 9 : 0.4, p95_ms: weak ? 38 : 1.1, p99_ms: weak ? 61 : 1.6, max_ms: weak ? 94 : 2.4, delivered_kbps: need ? 39800 : 7950 },
+          down_mbps: p.full ? (weak ? 38 : 940) : null, up_mbps: p.full ? (weak ? 31 : 910) : null,
+          verdict: weak ? { level: "marginal", audio: "poor", video: "marginal", headline: need ? `This connection is marginal for ${need.kind}: expect occasional glitches.` : "Audio: poor. Video: marginal.", notes: [`A round trip takes up to 14 ms (95th percentile). ${need && need.kind === "video" ? "Video stays smooth when that is under 8 ms" : "Audio stays smooth when that is under 6 ms"}: the computer using it only has a few milliseconds of data queued, and each replacement needs a full round trip.`, "The link paused 1 time(s) during the test (worst round trip 88 ms): each pause is a glitch in sound or video.", "A wired connection, or 5 GHz Wi-Fi close to the router, usually fixes this."] }
+            : { level: "good", audio: "good", video: "good", headline: need ? `This connection is good for ${need.kind}.` : "Audio: good. Video: good.", notes: [] } };
+        if (need) { rep.need = need; rep.busid = p.busid; } return rep;
+      }
       case "attach": {
         await delay(900); const a = p.addr.includes(":") ? p.addr : p.addr + ":3241";
         if (st.attachments.some((x) => x.addr === a && x.busid === p.busid)) fail("busy", `${p.busid} from ${a} is already attached`);

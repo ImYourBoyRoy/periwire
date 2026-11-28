@@ -41,6 +41,7 @@ pub(super) async fn urb_loop<R: AsyncReadExt + Unpin>(
     use crate::resume::Cause;
     let mut cause = Cause::Failed; // until the loop says otherwise: errors with `?` below are protocol errors
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+    let mut iso = IsoPath::new(sess.iso);
     // Read-only mode: write-protect USB storage on this session (the caller already refused non-storage devices).
     let guard: Option<Arc<Mutex<Guard>>> = if sess.read_only {
         dev.read().unwrap().bot.map(|b| {
@@ -126,28 +127,20 @@ pub(super) async fn urb_loop<R: AsyncReadExt + Unpin>(
                 USBIP_CMD_SUBMIT => {
                     let c = CmdSubmit::decode(&h)?;
                     c.validate()?; // before anything is allocated for what the header announces
+                    if c.basic.ep == 0 {
+                        iso.note_control(&c.setup); // a setting change ends any isochronous read-ahead (see iso_pump)
+                    }
                     let len = c.transfer_buffer_length;
                     let mut out = vec![];
                     if c.basic.direction == DIR_OUT && len > 0 {
                         out = vec![0u8; len as usize];
                         r.read_exact(&mut out).await?;
                     }
-                    let np = c.number_of_packets;
-                    if np > 0 {
-                        // Isochronous transfers are not supported yet: drain descriptors, fail the URB.
-                        let mut iso = vec![0u8; np as usize * 16];
-                        r.read_exact(&mut iso).await?;
-                        let ret = RetSubmit {
-                            basic: UrbBasic { command: USBIP_RET_SUBMIT, devid: 0, direction: 0, ep: 0, ..c.basic },
-                            status: EPIPE,
-                            actual_length: 0,
-                            start_frame: 0,
-                            number_of_packets: np,
-                            error_count: np,
-                        };
-                        let mut m = ret.encode();
-                        m.extend_from_slice(&iso);
-                        send(&tx, m);
+                    if c.number_of_packets > 0 {
+                        // Isochronous (camera video, audio): queued straight into libusb, answered from its completion callback.
+                        let mut raw_packets = vec![0u8; c.number_of_packets as usize * usbip_proto::ISO_DESC_LEN];
+                        r.read_exact(&mut raw_packets).await?;
+                        iso.submit(IsoSubmit { c, out, raw_packets, dev: &dev, tx: &tx, pending: &pending, sess: &sess });
                         continue;
                     }
                     sess.urbs.fetch_add(1, Ordering::Relaxed);
@@ -200,6 +193,7 @@ pub(super) async fn urb_loop<R: AsyncReadExt + Unpin>(
                     let u = CmdUnlink::decode(&h)?;
                     trace!("unlink seq={} target={}", u.basic.seqnum, u.unlink_seqnum);
                     let found = pending.lock().unwrap().remove(&u.unlink_seqnum);
+                    iso.cancel(u.unlink_seqnum); // a no-op unless it is an isochronous transfer
                     let status = match found {
                         Some(flag) => {
                             flag.store(true, Ordering::Relaxed);
@@ -218,6 +212,7 @@ pub(super) async fn urb_loop<R: AsyncReadExt + Unpin>(
     for (_, f) in pending.lock().unwrap().drain() {
         f.store(true, Ordering::Relaxed);
     }
+    iso.cancel_all(); // queued isochronous transfers complete as cancelled; their callbacks run before the wait below ends
     drop(bot_q); // ends the storage worker once it has drained
     drop(ordered); // and the endpoint workers
     drop(run); // the closure holds a handle on the device too: without this the count below never reaches 1
@@ -228,8 +223,9 @@ pub(super) async fn urb_loop<R: AsyncReadExt + Unpin>(
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    // Hand the device back to the caller, which either releases it (the usual case) or parks it for a reconnect.
-    // If a worker is still stuck inside it, it is dropped when that worker finishes.
+    iso.finish(); // every callback has run (or the wait gave up): the event thread is no longer needed
+                  // Hand the device back to the caller, which either releases it (the usual case) or parks it for a reconnect.
+                  // If a worker is still stuck inside it, it is dropped when that worker finishes.
     let dev = Arc::try_unwrap(dev).ok().and_then(|l| l.into_inner().ok());
     LoopEnd { result, cause, dev }
 }

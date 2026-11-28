@@ -120,7 +120,7 @@ function spark(svg, data, color = "var(--accent)") {
 }
 
 // ------------------------------------------------------------------ state
-const S = { status: null, devices: [], connected: null, view: "overview", rates: new Map(), hist: Array(40).fill(0), logs: [], remote: { addr: "", list: null, error: null, loading: false, forAddr: "" }, doctor: null, doctorLoading: false, autoOn: true, roOn: false, busy: new Set() };
+const S = { status: null, devices: [], connected: null, view: "overview", rates: new Map(), hist: Array(40).fill(0), logs: [], remote: { addr: "", list: null, error: null, loading: false, forAddr: "" }, link: { addr: "", busid: null, full: false, loading: false, report: null, error: null, open: false }, doctor: null, doctorLoading: false, autoOn: true, roOn: false, busy: new Set() };
 const VIEWS = [
   { id: "overview", label: "Overview", icon: "grid", sub: "Everything that is connected, live." },
   { id: "share", label: "Share", icon: "share", sub: "USB devices on this computer. Switch one on to let trusted computers use it." },
@@ -280,9 +280,38 @@ async function browse(addr) {
   if (mine !== S.remote.seq) return;
   Object.assign(S.remote, { list, error, loading: false }); renderConnect();
 }
+// The connection check: how good is the link to another computer, for everything or for one device?
+async function linkCheck(addr, busid, full) {
+  addr = (addr || "").trim(); if (!addr) return toast("Type the other computer's name first", "info");
+  const mine = (S.link.seq = (S.link.seq || 0) + 1);
+  Object.assign(S.link, { addr, busid: busid || null, full: !!full, loading: true, report: null, error: null, open: true }); renderConnect();
+  let report = null, error = null;
+  try { report = await call("link.test", { addr, busid: busid || undefined, full: !!full }); } catch (e) { error = e.message; }
+  if (mine !== S.link.seq) return;
+  Object.assign(S.link, { report, error, loading: false }); renderConnect();
+}
+const LEVEL = { good: ["ok", "Good"], marginal: ["warn", "Marginal"], poor: ["bad", "Poor"] };
+function linkCard(L) {
+  const body = [];
+  if (L.loading) return h("div", { class: "card", style: "margin-top:16px;padding:18px 20px" }, h("div", { class: "row" }, h("i", { class: "spin" }), h("b", {}, `Measuring the connection to ${L.addr}…`), h("span", { class: "muted" }, L.full ? "about 6 seconds" : "about 2 seconds")));
+  if (L.error) return h("div", { class: "card", style: "margin-top:16px;padding:18px 20px;border-color:rgba(251,113,133,.35)" }, h("b", {}, "Could not measure the connection"), h("div", { class: "muted", style: "margin:4px 0 12px" }, L.error), h("button", { class: "btn sm", onclick: () => { S.link.open = false; renderConnect(); } }, "Close"));
+  const r = L.report, v = r.verdict, [cls, word] = LEVEL[v.level] || LEVEL.poor, ms = (x) => `${(+x || 0).toFixed(x < 10 ? 1 : 0)} ms`;
+  const stat = (label, value, sub) => h("div", { class: "tile card", style: "padding:12px 14px" }, h("div", { class: "label" }, label), h("div", { style: "font-size:20px;font-weight:700;margin-top:2px" }, value), h("div", { class: "sub" }, sub || ""));
+  body.push(h("div", { class: "row", style: "gap:12px;flex-wrap:wrap" }, h("span", { class: `chip ${cls}`, html: `<i class="dot"></i>${word}` }), h("b", {}, v.headline), h("span", { class: "grow" }), h("span", { class: "faint", style: "font-size:12px" }, `${L.addr}${r.busid ? " · device " + r.busid : ""} · ${r.seconds} s`)));
+  body.push(h("div", { class: "grid g-auto", style: "margin-top:14px;gap:10px" },
+    stat("Delay", ms(r.rtt.p50_ms), `jitter ${ms(r.rtt.jitter_ms)} · worst ${ms(r.rtt.max_ms)}`),
+    r.stream ? stat("Late arrivals", ms(r.stream.p99_ms), `${r.stream.received} of ${r.stream.expected} frames · 99th percentile`) : null,
+    r.down_mbps != null ? stat("Speed", `${Math.round(r.down_mbps)} Mbit/s`, `${Math.round(r.up_mbps)} Mbit/s the other way`) : null));
+  if (v.notes.length) body.push(h("ul", { class: "muted", style: "margin:14px 0 0;padding-left:18px;font-size:13px;line-height:1.55" }, v.notes.map((n) => h("li", {}, n))));
+  body.push(h("div", { class: "row", style: "margin-top:14px;gap:8px" }, L.full ? null : h("button", { class: "btn sm", onclick: () => linkCheck(L.addr, L.busid, true) }, "Measure speed too (6 s)"), h("button", { class: "btn sm ghost", onclick: () => linkCheck(L.addr, L.busid, L.full) }, "Run again"), h("button", { class: "btn sm ghost", onclick: () => { S.link.open = false; renderConnect(); } }, "Close")));
+  return h("div", { class: "card", style: "margin-top:16px;padding:18px 20px" }, body);
+}
+// What a camera or audio device asks of the network, from the other computer's device list.
+const isoChip = (d) => { if (!d.iso) return ""; const mb = Math.max(d.iso.in_kbps, d.iso.out_kbps) / 1000; return `<span class="chip acc" title="Camera and audio devices need a steady link. The most this one can use: ${mb.toFixed(0)} Mbit/s. Lower settings use less.">${d.iso.kind === "audio" ? "audio" : "live video"} · up to ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} Mbit/s</span>`; };
 async function attach(addr, busid, auto, name, read_only) {
   const key = `attach:${addr}:${busid}`;
   const r = await act(key, () => call("attach", { addr, busid, auto, name, read_only: !!read_only }), (r) => `Attached ${r.vid}:${r.pid} — it now appears on this computer${r.read_only ? ", write-protected" : ""}`);
+  if (r?.warnings?.length) toast(`${r.link?.verdict?.headline || "The connection is weak for this device."} ${r.warnings[0]}`, "info", 12000);
   if (r) go("overview");
 }
 // Read-only is decided when the device is imported (the other computer enforces it), so changing it is a safe eject + re-attach.
@@ -529,14 +558,18 @@ async function installDriver() {
   await act("driver", () => call("driver.install", { confirm: true }), (r) => (r.reboot ? "Driver installed — restart Windows to finish" : "Driver installed — you can connect to other computers now"));
 }
 const cn = vEls.connect;
-cn.innerHTML = `<div class="drv-banner"></div><div class="card" style="padding:18px 20px"><div class="row"><input class="input" id="host" placeholder="Computer to connect to — name or address, e.g. media-pc.local" spellcheck="false"><button class="btn primary" id="browse">${ic("search")} Browse devices</button></div><div class="muted" style="margin-top:10px;font-size:12.5px">The other computer must run periwire and trust this one. Default port is 3241.</div></div>
+cn.innerHTML = `<div class="drv-banner"></div><div class="card" style="padding:18px 20px"><div class="row"><input class="input" id="host" placeholder="Computer to connect to — name or address, e.g. media-pc.local" spellcheck="false"><button class="btn primary" id="browse">${ic("search")} Browse devices</button><button class="btn" id="linkcheck" title="Measure delay and speed to this computer and say whether it is good enough for a camera, a microphone or a drive">${ic("pulse")} Check connection</button></div><div class="muted" style="margin-top:10px;font-size:12.5px">The other computer must run periwire and trust this one. Default port is 3241.</div></div>
+  <div id="link-out"></div>
   <div id="remote-out"></div>
   <div class="section-title">Attached now<span class="line"></span></div><div class="list" id="att-list"></div>
   <div class="section-title">Remembered<span class="line"></span></div><div class="list" id="mem-list"></div>`;
 $("#host").addEventListener("keydown", (e) => e.key === "Enter" && browse(e.target.value));
 $("#browse").addEventListener("click", () => browse($("#host").value));
+$("#linkcheck").addEventListener("click", () => linkCheck($("#host").value, null, false));
 function renderConnect() {
   const st = S.status; if (!st) return; driverBanner(); const r = S.remote; const out = $("#remote-out");
+  const lo = $("#link-out"), lsig = JSON.stringify(S.link);
+  if (lo._sig !== lsig) { lo._sig = lsig; lo.innerHTML = ""; if (S.link.open) lo.append(linkCard(S.link)); }
   const sig = JSON.stringify([r.loading, r.error, r.list, r.forAddr, [...S.busy].filter((k) => k.startsWith("attach:")), st.attachments.map((a) => a.addr + a.busid), S.autoOn, S.roOn]);
   if (out._sig !== sig) {
     out._sig = sig; out.innerHTML = "";
@@ -552,8 +585,9 @@ function renderConnect() {
       else out.append(h("div", { class: "grid g-auto" }, r.list.map((d) => {
         const have = st.attachments.find((a) => a.addr.replace(/:3241$/, "") === r.forAddr.replace(/:3241$/, "") && a.busid === d.busid); const key = `attach:${r.forAddr}:${d.busid}`; const busy = S.busy.has(key);
         return h("div", { class: "card dev" + (have ? " is-shared" : "") }, h("div", { class: "dev-head" }, h("div", { class: "ico", html: ic(iconFor(d)) }), h("div", { class: "grow" }, h("div", { class: "dev-title" }, devName(d)), h("div", { class: "dev-sub" }, `${d.label && d.product ? d.product + " · " : ""}${d.vid}:${d.pid} · port ${d.busid}`))),
-          h("div", { class: "dev-body", html: `<span class="chip ${isSpecial(d) ? "special" : ""}">${esc(d.kind_label || d.class)}</span><span class="chip">${esc(speedShort(d.speed))}</span>` }),
+          h("div", { class: "dev-body", html: `<span class="chip ${isSpecial(d) ? "special" : ""}">${esc(d.kind_label || d.class)}</span><span class="chip">${esc(speedShort(d.speed))}</span>${isoChip(d)}` }),
           h("div", { class: "dev-foot" }, h("span", { class: "faint", style: "font-size:12px" }, have ? "Attached here" : "Plugged into " + r.forAddr.replace(/:3241$/, "")),
+            d.iso && !have ? h("button", { class: "btn sm ghost", title: "Is the connection good enough for this device?", onclick: () => linkCheck(r.forAddr, d.busid, false) }, "Check link") : null,
             have ? h("button", { class: "btn sm danger", onclick: () => eject(have), html: `${ic("eject")} Eject` }) : h("button", { class: "btn sm primary", disabled: busy, onclick: () => attach(r.forAddr, d.busid, S.autoOn, undefined, S.roOn), html: busy ? '<i class="spin"></i> Attaching' : `${ic("connect")} Attach` })));
       })));
     }

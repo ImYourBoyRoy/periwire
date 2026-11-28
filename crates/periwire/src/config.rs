@@ -7,10 +7,13 @@ use serde::{Deserialize, Serialize};
 pub struct ExportCfg {
     pub enabled: bool,
     pub listen: String,
+    /// Carry isochronous transfers (camera video, microphones, speakers). On by default; turn off to refuse them.
+    #[serde(default = "yes")]
+    pub isochronous: bool,
 }
 impl Default for ExportCfg {
     fn default() -> Self {
-        Self { enabled: true, listen: "0.0.0.0:3241".into() }
+        Self { enabled: true, listen: "0.0.0.0:3241".into(), isochronous: true }
     }
 }
 

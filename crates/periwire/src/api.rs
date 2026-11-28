@@ -40,7 +40,8 @@ pub const METHODS: &[(&str, &str)] = &[
     ("share.add", "{spec, read_only?} -> share a local device (busid like 2-2, or vid:pid); read_only write-protects USB storage for every importer; calling it again changes the mode (a current user is disconnected)"),
     ("share.remove", "{spec} -> stop sharing; any peer using it is disconnected"),
     ("remote.list", "{addr} -> devices a remote machine shares with us"),
-    ("attach", "{addr, busid, auto?, name?, read_only?} -> import a remote device here; auto=remember and reconnect; read_only=write-protect USB storage (default read and write)"),
+    ("link.test", "{addr, busid?, full?} -> measure the connection to a computer: round-trip time, jitter, a steady stream shaped like the device's traffic, and (full=true) throughput each way; with busid the verdict is for that device (camera, microphone, drive); takes 2 to 8 seconds"),
+    ("attach", "{addr, busid, auto?, name?, read_only?, check_link?} -> import a remote device here; auto=remember and reconnect; read_only=write-protect USB storage (default read and write); a camera or audio device gets a quick link check first (check_link=false skips it) and the result is returned as `link`, with `warnings` when the link is weak"),
     ("detach", "{id | busid, addr?, force?} -> safe eject: unmount, detach, release; force unmounts busy mounts lazily"),
     ("kick", "{session | busid} -> force-disconnect a peer using one of our shared devices"),
     ("trust.list", "{} -> trusted peer fingerprints"),
@@ -141,6 +142,7 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
             let addr = req_str(p, "addr")?;
             Ok(json!(crate::import::list_remote(&norm_addr(addr)).await.map_err(failed)?))
         }
+        "link.test" => crate::linktest::api_test(&norm_addr(req_str(p, "addr")?), str_p(p, "busid"), bool_p(p, "full")).await.map_err(failed),
         "attach" => {
             let (addr, busid) = (norm_addr(req_str(p, "addr")?), req_str(p, "busid")?.to_string());
             let auto = bool_p(p, "auto");
@@ -155,9 +157,13 @@ pub async fn dispatch(d: &Arc<Daemon>, method: &str, p: &Value) -> R {
             if auto {
                 d.save_connection(Connection { name: str_p(p, "name").unwrap_or("").into(), addr: addr.clone(), busid: busid.clone(), auto: true, read_only }).map_err(failed)?;
             }
+            // A camera or audio device lives or dies by the link: look at it first and say so, but never refuse because of it.
+            let link = if p.get("check_link").and_then(Value::as_bool).unwrap_or(true) { crate::linktest::before_attach(&addr, &busid).await } else { None };
             let att = d.atts.start(&addr, &busid, auto, read_only);
             d.atts.wait_attached(&att, Duration::from_secs(25)).await.map_err(failed)?;
-            Ok(att.view())
+            let mut view = att.view();
+            crate::linktest::add_to_attach(&mut view, &busid, &addr, link);
+            Ok(view)
         }
         "detach" => {
             let att = if let Some(id) = p.get("id").and_then(Value::as_u64) {

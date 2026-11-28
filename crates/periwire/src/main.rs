@@ -15,6 +15,7 @@ mod guard;
 mod hci;
 mod identity;
 mod import;
+mod linktest;
 #[cfg(target_os = "macos")]
 mod mac;
 mod mcp;
@@ -143,10 +144,11 @@ async fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Cmd::Remote { addr } => cli::remote(&mut open(false).await?, &addr, j).await,
+        Cmd::Linktest { addr, busid, full } => cli::linktest(&mut open(false).await?, &addr, busid.as_deref(), full, j).await,
         Cmd::Attach { addr, busid, auto, name, read_only } => {
             let mut b = open(true).await?;
             cli::simple(&mut b, j, "attach", json!({"addr": addr, "busid": busid, "auto": auto, "name": name, "read_only": read_only}), |v| {
-                format!(
+                let mut t = format!(
                     "{} {} {}:{} from {}{}",
                     ui::green("attached"),
                     v["busid"].as_str().unwrap_or(""),
@@ -154,7 +156,15 @@ async fn run(cli: Cli) -> Result<i32> {
                     v["pid"].as_str().unwrap_or(""),
                     v["addr"].as_str().unwrap_or(""),
                     if auto { "  (will re-attach automatically)" } else { "" }
-                )
+                );
+                if v["link"]["verdict"]["level"].is_string() && v["link"]["verdict"]["level"] != "good" {
+                    t.push_str(&format!("\n{} {}", ui::yellow("!"), v["link"]["verdict"]["headline"].as_str().unwrap_or("")));
+                    for n in v["warnings"].as_array().into_iter().flatten().filter_map(serde_json::Value::as_str) {
+                        t.push_str(&format!("\n    {n}"));
+                    }
+                    t.push_str("\n    (`periwire linktest <host> <busid> --full` measures it in detail)");
+                }
+                t
             })
             .await
         }

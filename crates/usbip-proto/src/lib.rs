@@ -3,6 +3,11 @@
 
 use thiserror::Error;
 
+mod iso;
+mod probe;
+pub use iso::*;
+pub use probe::*;
+
 pub const USBIP_VERSION: u16 = 0x0111;
 pub const OP_REQ_IMPORT: u16 = 0x8003;
 pub const OP_REP_IMPORT: u16 = 0x0003;

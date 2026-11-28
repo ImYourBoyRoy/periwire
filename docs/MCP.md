@@ -35,7 +35,8 @@ Annotations tell clients which are read-only (no confirmation needed) and which 
 | `periwire_list_remote` `{addr}` | What another computer shares with us | yes | |
 | `periwire_share` `{spec, read_only?}` | Share a local device; `read_only` write-protects USB storage for every importer | | |
 | `periwire_unshare` `{spec}` | Stop sharing; disconnects a current user | | yes |
-| `periwire_attach` `{addr, busid, auto?, name?, read_only?}` | Import a remote device; `read_only` write-protects USB storage | | |
+| `periwire_link_test` `{addr, busid?, full?}` | Measure the connection to another computer (about 2 s; `full` adds throughput, about 6 s): delay, jitter, a stream shaped like the device's traffic; verdict good, marginal or poor with reasons. Use it before attaching a camera or audio device, or to explain glitches | yes | |
+| `periwire_attach` `{addr, busid, auto?, name?, read_only?}` | Import a remote device; `read_only` write-protects USB storage. A camera or audio device gets a quick link check first; a weak link comes back as `link_warning` and `warnings` (it is never refused) | | |
 | `periwire_eject` `{target, force?}` | Safe eject (unmount, detach) | | yes |
 | `periwire_disconnect_peer` `{target}` | Force a peer off a device we share | | yes |
 | `periwire_trust_list` | Trusted computers | yes | |
@@ -68,7 +69,7 @@ Annotations tell clients which are read-only (no confirmation needed) and which 
 
 - *"Why can't my build machine see the iPad?"* → `periwire_doctor`, `periwire_status`, `periwire_logs`.
 - *"Share the flash drive with the Mac."* → `periwire_list_devices` → `periwire_share` → (human pairing) → done.
-- *"Give me the camera on media-pc."* → `periwire_list_remote` → `periwire_attach` → later `periwire_eject`.
+- *"Give me the camera on media-pc."* → `periwire_list_remote` → `periwire_link_test` (with its `busid`) → `periwire_attach` → later `periwire_eject`. If the verdict is poor, tell the user why (the `notes`) before attaching: a camera over a slow link attaches but delivers no frames.
 
 ## Protocol details
 

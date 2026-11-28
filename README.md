@@ -119,6 +119,8 @@ closing the desktop app's window hides it to that icon ([how it works](docs/GUI.
 | Safe eject | `periwire detach` flushes and unmounts first; refuses if files are open unless `--force` |
 | Take a device back | `periwire kick` / "Disconnect" — abrupt, the other side loses it immediately |
 | Pairing | fingerprint trust (`trust host`, `trust add`), no CA, no passwords |
+| Connection check | `periwire linktest HOST [busid]` measures delay, jitter and speed and says whether the link is good enough for a camera, a microphone or a drive; attaching a camera or audio device runs a quick one first and warns |
+| Cameras and audio | webcams and USB audio are carried live (isochronous transfers); verified with a webcam on Linux, see [platform notes](docs/PLATFORMS.md#cameras-and-audio-isochronous-devices) |
 | Health & diagnostics | `periwire doctor`, `status`, `logs -f`, `watch` |
 | Automation | `--json` on every command, exit codes, [MCP server](docs/MCP.md), [control API](docs/API.md) |
 
@@ -149,8 +151,10 @@ closing the desktop app's window hides it to that icon ([how it works](docs/GUI.
 [USB/IP](https://docs.kernel.org/usb/usbip_protocol.html) protocol over a mutually authenticated TLS 1.3 connection
 (port 3241). The using side hands that stream to the OS's virtual USB host controller: on Linux the kernel's
 `vhci_hcd`, on macOS a virtual controller created through `IOUSBHostControllerInterface`. The device enumerates with
-its real descriptors and the normal driver binds — storage mounts, cameras stream, HID works. Isochronous endpoints
-(webcam video, audio) are not supported yet; see [PLATFORMS](docs/PLATFORMS.md#limitations).
+its real descriptors and the normal driver binds — storage mounts, cameras stream, HID works. Live streams (webcam video, microphones, speakers) are
+carried as isochronous transfers: the sharing side keeps reading a camera ahead so a late request loses nothing, but the computer using it only
+queues about 20 ms, so such a device needs a quick link (under about 10 ms round trip: a wired LAN or good Wi-Fi, not a VPN across the country).
+`periwire linktest` measures that for you; see [cameras and audio](docs/PLATFORMS.md#cameras-and-audio-isochronous-devices).
 
 **Network paths.** It is plain TCP, so same-subnet, routed (cross-VLAN) and VM setups work wherever TCP port 3241 can
 reach the sharing computer. For VMs you do not need hypervisor USB passthrough: run the daemon *inside* the guest and
@@ -166,7 +170,7 @@ Support/periwire` (macOS) or the directory in `PERIWIRE_HOME`. The daemon's cont
 (root), `$XDG_RUNTIME_DIR/periwire.sock` (user) or `PERIWIRE_SOCKET`. `PERIWIRE_TRACE=1` prints every URB.
 
 **Configuration** (`config.json`): `export.enabled`, `export.listen`, `shares[]`, `connections[]` (the remembered
-imports, `auto` flag), `update_check` (the app's automatic check for a newer release; `periwire update` checks by hand). Edit through the CLI/app, not by hand while the daemon runs.
+imports, `auto` flag), `export.isochronous` (carry camera and audio devices; on by default, `PERIWIRE_ISO=0` turns it off for one run), `update_check` (the app's automatic check for a newer release; `periwire update` checks by hand). Edit through the CLI/app, not by hand while the daemon runs.
 
 ## License
 

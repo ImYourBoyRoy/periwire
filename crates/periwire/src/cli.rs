@@ -207,6 +207,62 @@ pub async fn remote(b: &mut Backend, addr: &str, json_out: bool) -> Result<i32> 
     Ok(0)
 }
 
+/// `periwire linktest`: measure the connection to another computer and say what it is good for.
+pub async fn linktest(b: &mut Backend, addr: &str, busid: Option<&str>, full: bool, json_out: bool) -> Result<i32> {
+    if !json_out {
+        eprintln!("{}", dim(&format!("measuring the connection to {addr} ({} s)…", if full { 6 } else { 2 })));
+    }
+    let v = call(b, "link.test", json!({"addr": addr, "busid": busid, "full": full})).await?;
+    if json_out {
+        print_json(&v);
+    } else {
+        print_link_report(&v);
+    }
+    Ok(match s(&v["verdict"], "level") {
+        "poor" => 4,
+        _ => 0,
+    })
+}
+
+fn print_link_report(v: &Value) {
+    let f = |x: &Value| x.as_f64().unwrap_or(0.0);
+    let r = &v["rtt"];
+    println!(
+        "{}  {}",
+        bold("Delay"),
+        format_args!("round trip {:.1} ms typical ({:.1}-{:.1}), jitter {:.1} ms, {} pause(s)", f(&r["p50_ms"]), f(&r["min_ms"]), f(&r["max_ms"]), f(&r["jitter_ms"]), n(r, "stalls"))
+    );
+    if v["stream"].is_object() {
+        let st = &v["stream"];
+        println!(
+            "{}  {}",
+            bold("Stream"),
+            format_args!(
+                "{:.1} Mbit/s sent in {:.0} ms steps: {} of {} frames arrived, late by up to {:.1} ms (99%: {:.1} ms)",
+                f(&st["rate_kbps"]) / 1000.0,
+                f(&st["interval_ms"]),
+                n(st, "received"),
+                n(st, "expected"),
+                f(&st["max_ms"]),
+                f(&st["p99_ms"])
+            )
+        );
+    }
+    if v["down_mbps"].is_number() {
+        println!("{}  {}", bold("Speed"), format_args!("{:.0} Mbit/s from {} to here, {:.0} Mbit/s back", f(&v["down_mbps"]), s(v, "addr"), f(&v["up_mbps"])));
+    }
+    let vd = &v["verdict"];
+    let (mark, col): (&str, fn(&str) -> String) = match s(vd, "level") {
+        "good" => ("✔", green),
+        "marginal" => ("!", yellow),
+        _ => ("✘", red),
+    };
+    println!("\n{} {}", col(mark), bold(s(vd, "headline")));
+    for note in vd["notes"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        println!("    {note}");
+    }
+}
+
 pub async fn doctor(b: &mut Backend, json_out: bool) -> Result<i32> {
     let v = call(b, "doctor", json!({})).await?;
     let checks = v.as_array().cloned().unwrap_or_default();

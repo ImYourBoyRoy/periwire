@@ -82,7 +82,7 @@ Draft text for the report (replace the team and links if they change):
 
 ## Known limitations
 
-- Isochronous transfers (cameras, audio) are failed cleanly; macOS's controller API does not handle them well either.
+- Isochronous transfers (cameras, audio) are failed cleanly when a Mac *imports* a device: the importer does not carry them. (Linux sharing a camera to Linux works; see [PLATFORMS](PLATFORMS.md#cameras-and-audio-isochronous-devices).)
 - UAS drives are not downgraded to bulk-only yet (macOS does not fall back by itself); non-UAS drives and the iPad are unaffected.
 - **Throughput over the network (measured 2026-11-12 on a real iPad Pro, 7 ms round trip).** The iPad's file transfers ride on its
   Ethernet-over-USB (CDC-NCM) link. macOS's driver for it posts one 32 KB transfer, waits for it to complete and only then posts the next,

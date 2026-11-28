@@ -86,7 +86,7 @@ pub(super) fn run_urb(dev: &RwLock<Dev>, c: &CmdSubmit, out: Vec<u8>, cancel: &A
             }
         } else {
             match g.h.write_control(rt, req, val, idx, &out, t) {
-                Ok(_) => (0, vec![]),
+                Ok(n) => (n as i32, vec![]), // the count matters: a USB video driver checks that all of a probe/commit request was taken
                 Err(e) => (g.err(e), vec![]),
             }
         };

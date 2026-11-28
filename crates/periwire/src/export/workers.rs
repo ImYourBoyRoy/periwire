@@ -146,7 +146,7 @@ pub(super) fn bot_worker(
 /// Build the RET_SUBMIT for a URB: `status` is bytes written (OUT bulk), or the IN data length is `data.len()`.
 pub(super) fn make_ret(c: &CmdSubmit, status: i32, data: &[u8]) -> Vec<u8> {
     let is_in = c.basic.direction == DIR_IN;
-    let (st, actual) = if is_in || c.basic.ep == 0 {
+    let (st, actual) = if is_in {
         (if status < 0 { status } else { 0 }, data.len() as i32)
     } else if status >= 0 {
         (0, status)
@@ -162,7 +162,7 @@ pub(super) fn make_ret(c: &CmdSubmit, status: i32, data: &[u8]) -> Vec<u8> {
         error_count: 0,
     };
     let mut m = ret.encode();
-    if (is_in || c.basic.ep == 0) && st == 0 && c.basic.direction == DIR_IN {
+    if is_in && st == 0 {
         m.extend_from_slice(data);
     }
     m

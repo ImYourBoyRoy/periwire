@@ -180,11 +180,20 @@ impl Dev {
         map_err(e)
     }
 
+    /// Hand the interfaces back, last first. Releasing one re-attaches the kernel driver for it, and a driver that binds to a device's
+    /// first interface and then claims the others itself (USB video and audio do) needs those free by then: released in order, it
+    /// would find the next interface still ours and give up, and the device would stay without its driver.
     pub(super) fn release_all(&mut self) {
-        for n in self.claimed.drain(..) {
+        for n in release_order(&self.claimed) {
             let _ = self.h.release_interface(n);
         }
+        self.claimed.clear();
     }
+}
+
+/// The order interfaces are handed back in: the last one claimed first (see `Dev::release_all`).
+pub(super) fn release_order(claimed: &[u8]) -> Vec<u8> {
+    claimed.iter().rev().copied().collect()
 }
 
 /// libusb reports a disconnected device as `NoDevice`. (`NotFound` is a missing endpoint or interface, not a vanished device.)

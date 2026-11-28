@@ -187,6 +187,7 @@ pub(super) fn view_device(shared: &Shared, specs: &[String], dev: &Device<Contex
         "reconnect_hold": shared.is_parked(&u.busid),
         "in_use_by": session.map(|s| if s.peer_name.is_empty() { s.peer.clone() } else { s.peer_name.clone() }),
         "mounted": mounts,
+        "iso": super::isoinfo::iso_need(dev, u.speed),
     })
 }
 

@@ -80,6 +80,18 @@ pub(crate) enum Cmd {
         /// Host or host:port of the other machine (default port 3241).
         addr: String,
     },
+    /// Measure the connection to another computer: delay, jitter and speed, and whether it is good enough for a camera,
+    /// a microphone or a drive. Give a device to judge the link for that device.
+    #[command(name = "linktest", alias = "link")]
+    Linktest {
+        /// Host or host:port of the other machine.
+        addr: String,
+        /// Judge the link for this device on that machine (its port id, e.g. 2-2; see `periwire remote <addr>`).
+        busid: Option<String>,
+        /// Also measure throughput each way (takes about 6 seconds instead of 2).
+        #[arg(long)]
+        full: bool,
+    },
     /// Import a remote device here. It appears as if it were plugged into this machine.
     Attach {
         /// Host or host:port of the machine the device is plugged into.

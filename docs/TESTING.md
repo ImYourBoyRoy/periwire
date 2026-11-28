@@ -51,6 +51,27 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 | `usbmuxd` stepped aside and put back (Linux, iPad) | a root daemon sharing a real iPad: the attach that used to fail with "Resource busy" works, `usbmuxd` is stopped while the iPad is shared and started again 1 s after a detach, after the daemon is stopped (it waits for the sessions first) and at the next start after a `kill -9`; the iPad's volume is back in the file manager each time |
 | In-app help | the `help_matches_cli` test checks every command and flag in `gui/ui/help.js` against the real CLI |
 
+### Cameras and the connection check (2026-11-27)
+
+Linux to Linux on one laptop with the installed daemon left alone: two throw-away daemons as root with their own homes, sockets and ports (`tools/iso-e2e.sh`), the first sharing the laptop's own webcam (HP Wide Vision, USB 2, UVC), the second importing it through `vhci_hcd`, so the whole path ran: libusb on the sharing side, TLS, the relay, the kernel's USB/IP client and the `uvcvideo` driver.
+
+| Check | Result |
+|---|---|
+| Format list, then streaming 640x480 raw (YUYV) | 82 frames in 5 s, then 450 in 30 s (15 frames a second: the camera's rate in this light); the picture was a real, clean frame |
+| 1280x720 Motion-JPEG | 60 frames in 4 s |
+| Five stream starts and stops in a row | 30 frames each, no errors |
+| Detaching in the middle of a stream | 1.4 s; the camera's own driver binds again (this found a bug: interfaces were handed back first-to-last, so `uvcvideo` found its streaming interface still claimed and the camera stayed gone until its driver was re-bound by hand; they are now released last-to-first, with a test) |
+| UVC probe/commit | failed until control transfers *to* a device reported the bytes written (they reported 0; a USB video driver checks); fixed for every device |
+| Link check, loopback | good for video, 5.6 Gbit/s each way |
+| Shaped link, about 5 ms round trip | all frames; check: good |
+| Shaped link, about 10 ms round trip with 3 ms jitter | all frames (90 in 6 s); check: marginal |
+| Shaped link, about 30 ms round trip | no frames; check: too weak (the warning also appears when attaching) |
+| Same 10 ms link before the sharing side read the camera ahead | 17 frames in 10 s instead of 150 |
+| After a bad link, a fresh stream | 120 frames in 4 s, so nothing was left wedged |
+
+Raw webcam frames compress about 1.5x with fast compression (12 to 22 ms of one CPU core per frame), so the stream is not compressed.
+Not run: any audio device (no USB audio hardware here; the kernel has no `dummy_hcd` to fake one), transfers *to* a device, Windows and macOS.
+
 ## Not verified yet
 
 - **Daemon control:** the administrator choice and the service buttons through the system's own prompts (polkit, the macOS dialog, UAC) were not clicked: the commands under them were run directly (Linux: `service install --for-user` / `status` / `uninstall` on a systemd host, the socket belongs to the user, no sudo for the user afterwards; Windows: the scheduled task installs, runs and is removed). macOS `service install` (launchd) is unverified.
@@ -63,7 +84,8 @@ The desktop on the exporting machine auto-mounts a returned drive and the export
 - An actual Xcode build and run to the iPad through the importer (signing identities do not belong in a throwaway guest), `xctrace record`
   against iPadOS 27 (Instruments in Xcode 26.6 does not support it; `devicectl` is fine), iPad sleep and wake.
 - The GUI "Read-only for others" switch against a real importer, and the GUI inside the real Tauri window (including the one-click driver install on Windows).
-- Isochronous devices (cameras, audio), UAS drives on macOS, internet relay, a macOS exporter.
+- Isochronous **audio** devices (microphones, speakers, headsets: none was available), isochronous transfers *to* a device on hardware, cameras on a Windows or macOS importer or exporter, UAS drives on macOS, internet relay, a macOS exporter.
+- A camera across a real Wi-Fi link (only a shaped loopback link was measured), and the thresholds the connection check uses for audio (estimates).
 - Write-behind on other Ethernet-over-USB devices (only the iPad's NCM link was measured), and prefetching for the iPad-to-Mac direction.
 - The accelerator on writes and on a physical unplug mid-transfer (unit tests cover writes and failures; no hardware run), and a macOS speed measurement.
 - Production macOS use with SIP on: the importer needs Apple's host-controller entitlement (or SIP relaxed) until that is granted.

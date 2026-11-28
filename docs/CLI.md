@@ -68,6 +68,11 @@ under the new rule. `devices` shows `shared (read-only)`.
 List what another computer shares with you, with the names and kinds that computer reports (labels included). Needs mutual trust. Errors mention the fingerprint step when the TLS
 handshake fails.
 
+### `periwire linktest ADDR [BUSID] [--full]`  (alias `link`)
+Measure the connection to another computer and say what it is good for. About 2 seconds; `--full` also measures throughput each way (about 6 seconds). It sends paced pings (round trip, jitter, pauses) and a stream of frames on a fixed schedule, then compares them with what
+a camera or microphone needs. With `BUSID` (from `periwire remote ADDR`) the stream follows that device and the verdict is for it; without, it reports how good the link is for audio and for video in general. Prints the numbers, a verdict (good, marginal or poor) and the reasons; `--json` returns
+the full report (see `link.test` in the [API](API.md)). Exit code 4 when the verdict is poor. The other computer must run a PeriWire newer than 0.1.5 (the check is a protocol extension).
+
 ### `periwire attach ADDR BUSID [--auto] [--name N] [--read-only]`
 Import a remote device; returns when it is attached (≤25 s). Needs the daemon with import rights (root on Linux).
 `--auto` remembers the connection: it is re-attached on daemon start and after network drops (exponential back-off to
@@ -78,6 +83,8 @@ drives, card readers): the computer the device is plugged into reports it as wri
 by itself, and it also refuses every write, format or other non-read command, so nothing can change the drive even from raw
 access. Other kinds of device cannot be write-protected this way, so they are refused in read-only mode instead of being left
 writable. The mode is fixed when the device is imported; `status` shows `read-only`. Needs PeriWire 0.1+ on both computers.
+
+Attaching a camera or audio device first runs a quick link check (`periwire linktest`, about 2 seconds) and prints a warning with the reasons when the link is weak for that device; it never refuses (`PERIWIRE_LINKCHECK=0` skips the check).
 
 ### `periwire detach TARGET [--force]`  (alias `eject`)
 Safe eject: flush, unmount every filesystem on the device, detach it, hand it back. If a mount is busy the eject is
@@ -190,4 +197,6 @@ periwire doctor --json >/dev/null; [ $? -eq 4 ] && notify "periwire unhealthy"
 | `PERIWIRE_HOME` | Directory for identity, trust list and config. |
 | `PERIWIRE_SOCKET` | Control socket path (CLI, MCP, GUI and daemon). |
 | `PERIWIRE_TRACE` | Set to print every USB request in the daemon log (very verbose). |
+| `PERIWIRE_ISO` | `0` refuses camera and audio (isochronous) transfers for this run of the daemon; the config's `export.isochronous` is the permanent setting. |
+| `PERIWIRE_LINKCHECK` | `0` skips the quick link check made before attaching a camera or audio device. |
 | `NO_COLOR` | Disable colour. |

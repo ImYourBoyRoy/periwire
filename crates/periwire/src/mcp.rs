@@ -48,6 +48,7 @@ fn tools() -> Vec<Value> {
         tool("periwire_list_remote", "Devices another computer shares with us (needs mutual trust).", json!({"addr": addr}), &["addr"], true, false),
         tool("periwire_share", "Share a local device with trusted computers. read_only write-protects USB storage for every importer.", json!({"spec": spec, "read_only": ro}), &["spec"], false, false),
         tool("periwire_unshare", "Stop sharing a device; a current user is disconnected at once (abrupt, may lose data).", json!({"spec": spec}), &["spec"], false, true),
+        tool("periwire_link_test", "Measure the connection to another computer (about 2 s; full=true adds throughput, about 6 s): delay, jitter, a stream shaped like the device's traffic. Give busid to judge the link for that device. Use it before attaching a camera or audio device, or to explain glitches. Reports a verdict (good, marginal, poor) with reasons.", json!({"addr": addr, "busid": busid, "full": {"type": "boolean", "description": "also measure throughput each way"}}), &["addr"], true, false),
         tool("periwire_attach", "Import a remote device here as if plugged in. auto remembers it and reconnects. Needs the daemon (root on Linux); waits up to 25 s.", json!({"addr": addr, "busid": busid, "auto": {"type": "boolean"}, "name": {"type": "string", "description": "label for a remembered connection"}, "read_only": ro}), &["addr", "busid"], false, false),
         tool("periwire_eject", "Safely eject an imported device (unmounts first; fails if files are open). force only if the user accepts possible data loss.", json!({"target": {"type": "string", "description": "attachment number, busid or vid:pid"}, "force": {"type": "boolean"}}), &["target"], false, true),
         tool("periwire_disconnect_peer", "Force a computer off one of OUR shared devices (abrupt; prefer asking them to eject).", json!({"target": {"type": "string", "description": "session number or busid"}}), &["target"], false, true),
@@ -115,6 +116,9 @@ fn compact_attachment(a: &Value) -> Value {
     o.insert("name".into(), json!(if a["info"].is_object() { dev_name(&a["info"]) } else { format!("{}:{}", s_of(a, "vid"), s_of(a, "pid")) }));
     set_if(&mut o, "ro", a["read_only"] == json!(true), json!(true));
     set_if(&mut o, "auto", a["auto"] == json!(true), json!(true));
+    // The link check made before a camera or audio device was attached: say when it is weak (the full report is `periwire_link_test`).
+    set_if(&mut o, "link_warning", a["link"]["verdict"]["level"].is_string() && a["link"]["verdict"]["level"] != "good", a["link"]["verdict"]["headline"].clone());
+    set_if(&mut o, "warnings", a["warnings"].as_array().map(|x| !x.is_empty()).unwrap_or(false), a["warnings"].clone());
     set_if(&mut o, "mounts", a["mounts"].as_array().map(|x| !x.is_empty()).unwrap_or(false), a["mounts"].clone());
     o.insert("in".into(), a["bytes_in"].clone());
     o.insert("out".into(), a["bytes_out"].clone());
@@ -204,6 +208,7 @@ async fn call_tool(name: &str, a: &Value) -> Result<Value, (String, String)> {
             let d = b.call("remote.list", json!({"addr": g("addr")})).await.map_err(e2)?;
             Ok(prune(json!({"devices": d.as_array().cloned().unwrap_or_default().iter().map(compact_device).collect::<Vec<_>>()})))
         }
+        "periwire_link_test" => b.call("link.test", json!({"addr": g("addr"), "busid": g("busid"), "full": g("full")})).await.map_err(e2),
         "periwire_share" => b.call("share.add", json!({"spec": g("spec"), "read_only": g("read_only")})).await.map_err(e2),
         "periwire_unshare" => b.call("share.remove", json!({"spec": g("spec")})).await.map_err(e2),
         "periwire_attach" => {

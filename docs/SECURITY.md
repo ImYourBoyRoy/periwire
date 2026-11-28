@@ -34,6 +34,11 @@ Please do not open a public issue for a security problem. Use GitHub's private r
   daemon. The daemon runs as root on Linux (needed to attach devices); keep the socket group small.
 - The desktop app and MCP server make no network connections of their own.
 
+## What a trusted peer can ask for
+
+A trusted peer's requests are still checked before anything is allocated or waited for: a transfer's length and packet count (`usbip-proto`), the layout of an isochronous transfer's packets (each must lie inside its buffer, none larger than any real endpoint allows, at most 64 transfers in flight per session), and a connection check's
+request (`PROBE_MAX_*`: duration, rate, frame size and number of pings are capped, the whole exchange is time-limited, and at most two checks run at once). A check is a deliberate burst of traffic, so it is only answered for trusted peers.
+
 ## Connections that have not authenticated
 
 Anyone who can reach the exporter's port can open a TCP connection without credentials, so the exporter limits what such a connection can cost: a TLS

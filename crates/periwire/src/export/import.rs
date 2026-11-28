@@ -11,13 +11,14 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
     let peer_name = identity::load_trusted_named().unwrap_or_default().into_iter().find(|(f, _)| *f == peer_fp).map(|(_, n)| n).unwrap_or_default();
     let (mut r, mut w) = tokio::io::split(stream);
     let (tx, mut rx) = unbounded_channel::<Vec<u8>>();
+    // The writer task owns the write half until its queue closes; it hands it back so a caller can finish with it (`finish`) or use it directly (the connection check).
     let writer = tokio::spawn(async move {
         while let Some(m) = rx.recv().await {
             if w.write_all(&m).await.is_err() || w.flush().await.is_err() {
                 break;
             }
         }
-        let _ = w.shutdown().await;
+        w
     });
 
     let mut hdr = [0u8; 8];
@@ -48,7 +49,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
             let devs = tokio::task::spawn_blocking(move || shared_devices(&s)).await??;
             send(&tx, encode_devlist_reply(&devs));
             drop(tx);
-            let _ = writer.await;
+            finish(writer).await;
             Ok(())
         }
         OP_REQ_DEVINFO => {
@@ -67,7 +68,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
             m.extend_from_slice(&body);
             send(&tx, m);
             drop(tx);
-            let _ = writer.await;
+            finish(writer).await;
             Ok(())
         }
         OP_REQ_IMPORT => {
@@ -95,7 +96,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
                 crate::logln!("[{peer}] import of {want} refused: already in use by another peer");
                 send(&tx, OpHeader::new(OP_REP_IMPORT, 1).encode().to_vec());
                 drop(tx);
-                let _ = writer.await;
+                finish(writer).await;
                 return Ok(());
             }
             let peer2 = peer.clone();
@@ -144,7 +145,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
                     let code = if format!("{e:#}").starts_with("read-only unsupported") { IMPORT_READ_ONLY_UNSUPPORTED } else { 1 };
                     send(&tx, OpHeader::new(OP_REP_IMPORT, code).encode().to_vec());
                     drop(tx);
-                    let _ = writer.await;
+                    finish(writer).await;
                     Ok(())
                 }
                 Ok((dev, udev, read_only, patches, options, resumed)) => {
@@ -174,6 +175,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
                         since: crate::events::now(),
                         urbs: AtomicU64::new(0),
                         read_only,
+                        iso: shared.iso.load(Ordering::Relaxed),
                         fp: peer_fp.clone(),
                         resume,
                         options,
@@ -188,7 +190,7 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
                     crate::events::emit("state", json!({}));
                     let end = urb_loop(&mut r, tx, Arc::new(RwLock::new(dev)), shutdown, kick_rx, sess.clone(), accel, patches).await;
                     let res = end.result;
-                    let _ = writer.await;
+                    finish(writer).await;
                     shared.sessions.lock().unwrap().remove(&sess.id);
                     let grace = crate::resume::grace();
                     match end.dev {
@@ -219,6 +221,21 @@ pub(super) async fn handle(stream: tokio_rustls::server::TlsStream<TcpStream>, s
                 }
             }
         }
+        OP_REQ_PROBE => {
+            // The connection check needs the write half to itself, with the sender's backpressure: queue nothing, drop the queue, take the half back.
+            drop(tx);
+            let mut w = writer.await?;
+            let res = crate::linktest::serve(&mut r, &mut w).await;
+            let _ = w.shutdown().await;
+            res
+        }
         c => bail!("unknown op code {c:#x}"),
+    }
+}
+
+/// Let the queued replies go out, then close the connection properly (TLS close_notify).
+async fn finish(writer: tokio::task::JoinHandle<tokio::io::WriteHalf<tokio_rustls::server::TlsStream<TcpStream>>>) {
+    if let Ok(mut w) = writer.await {
+        let _ = w.shutdown().await;
     }
 }

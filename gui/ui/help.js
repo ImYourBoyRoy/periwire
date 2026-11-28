@@ -32,8 +32,9 @@ export const PAGES = {
       "Press Attach on a device. It appears here like any USB device.",
       "'Reconnect automatically' keeps it attached after reboots and network drops. 'Read-only' write-protects a USB drive.",
       "Always press Eject when you are done: it saves and unmounts the drive first.",
+      "Using a camera or microphone? Press Check connection (or Check link on the device) first: it measures the link and says whether it is good enough. Cameras and audio need a steady link; a wired connection is best.",
     ],
-    expert: "`periwire remote HOST`, `periwire attach HOST 2-2 --auto --read-only` and `periwire detach 2-2` do the same. Linux needs root and the vhci-hcd module; macOS needs Apple's host-controller entitlement (or SIP relaxed for testing); Windows needs the USB driver, which the banner installs.",
+    expert: "`periwire remote HOST`, `periwire attach HOST 2-2 --auto --read-only` and `periwire detach 2-2` do the same. `periwire linktest HOST 2-2 --full` measures the link for a device. Linux needs root and the vhci-hcd module; macOS needs Apple's host-controller entitlement (or SIP relaxed for testing); Windows needs the USB driver, which the banner installs.",
   },
   trust: {
     title: "Trust",
@@ -101,7 +102,8 @@ export const EXPERT = {
     ["Files and sockets", "Identity and settings live in the PeriWire home directory (`PERIWIRE_HOME`). The daemon's control socket is /run/periwire/periwire.sock as root, $XDG_RUNTIME_DIR/periwire.sock for a user daemon, and the named pipe \\\\.\\pipe\\periwire on Windows (`PERIWIRE_SOCKET` overrides)."],
     ["Speed", "USB storage costs about three network round trips per command, so speed is limited by round-trip time on slow or distant links and by bandwidth on large reads. Expect several MB/s on Wi-Fi; across the internet it is capped by the sender's upload speed."],
     ["Read-only", "The computer holding the drive reports it write-protected (the write-protect bit in MODE SENSE) and refuses every SCSI command that is not a known read command. It works for USB storage; other devices are refused in read-only mode instead of being left writable."],
-    ["Not supported yet", "Isochronous devices (cameras, microphones), an internet relay, and UAS drives on macOS."],
+    ["Cameras and audio", "Carried as live (isochronous) transfers, which need a steady link: Check connection says if yours is good enough. Verified with a webcam on Linux; microphones and speakers, and importing them on macOS and Windows, are not verified yet."],
+    ["Not supported yet", "An internet relay, and UAS drives on macOS."],
     ["Automation", "`periwire --json` prints JSON for any command; `periwire api METHOD` calls any daemon method; `periwire mcp` runs the MCP server that lets an AI assistant do the same with compact replies and human confirmation for risky actions."],
   ],
   cli: [
@@ -110,6 +112,7 @@ export const EXPERT = {
     ["periwire share 2-2 --read-only", "Share a device (optionally write-protected)"],
     ["periwire remote HOST", "What another computer shares"],
     ["periwire attach HOST 2-2 --auto --read-only", "Use a remote device"],
+    ["periwire linktest HOST 2-2", "Is the connection good enough for a camera or microphone?"],
     ["periwire detach 2-2", "Safely eject it"],
     ["periwire trust host HOST", "Pair: show a host's fingerprint, then trust it"],
     ["periwire id", "This computer's fingerprint"],

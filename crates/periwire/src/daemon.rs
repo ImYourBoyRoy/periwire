@@ -35,6 +35,9 @@ impl Daemon {
         let id = identity::load_or_create()?;
         let cfg = Config::load()?;
         let shared = Shared::new(cfg.shares.clone(), cfg.ro_shares.clone(), cfg.labels.clone());
+        // `PERIWIRE_ISO=0` turns isochronous transfers off for this run (a safety valve), whatever the config says.
+        let iso_env = std::env::var("PERIWIRE_ISO").map(|v| !matches!(v.as_str(), "0" | "off" | "false")).unwrap_or(true);
+        shared.iso.store(cfg.export.isochronous && iso_env, std::sync::atomic::Ordering::Relaxed);
         Ok(Arc::new(Daemon {
             started: events::now(),
             fingerprint: Mutex::new(id.fingerprint),

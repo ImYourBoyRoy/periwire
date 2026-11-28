@@ -18,7 +18,8 @@ is closed and the app can be restarted any time.
 - **Share** — every USB device on this computer with a switch; "in use by …" and "mounted here" shown on the card.
 
   <img src="img/share-dark.webp" alt="Share page" width="760">
-- **Connect** — browse another computer, attach with one click, optional automatic reconnect, remembered connections.
+- **Connect** — browse another computer, attach with one click, optional automatic reconnect, remembered connections. **Check connection** measures the link (delay, jitter, speed) and says in plain words whether it is good enough for a camera, a microphone or a drive;
+  a camera or audio device's card shows what it needs and has its own *Check link* button, and attaching one runs a quick check first and shows a warning when the link is weak.
 
   <img src="img/connect-light.webp" alt="Connect page" width="760">
 - **Trust** — your fingerprint (with a visual identicon), trusted computers, and a guided "read fingerprint → compare →

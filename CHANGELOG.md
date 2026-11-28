@@ -3,6 +3,22 @@
 All notable changes. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (anything before 1.0 may change between releases).
 
+## [0.1.6] — 2026-11-27
+
+Webcams and live audio, and a way to tell whether your link is good enough for them.
+
+### Added
+- **Cameras and audio (isochronous transfers).** The sharing side now carries the live transfers a webcam, microphone or speaker uses (they used to fail, so such a device attached but did nothing). It keeps a camera's endpoint read ahead so a late request loses nothing. Verified with a webcam on Linux (raw and Motion-JPEG video, repeated starts, a 30-second run, detaching mid-stream);
+  audio devices, transfers to a device, Windows and macOS were not tested, and a Mac cannot import them. `export.isochronous` (default on) and `PERIWIRE_ISO=0` turn it off. See [PLATFORMS](docs/PLATFORMS.md#cameras-and-audio-isochronous-devices) for what the link must be like: about 10 ms of round trip at most.
+- **Connection check.** `periwire linktest HOST [BUSID] [--full]`, the `link.test` API method, the MCP tool `periwire_link_test` (22 tools now) and a *Check connection* button on Connect measure delay, jitter, a stream shaped like the device's traffic and (with `--full`) speed each way, and say in plain words whether the link is good enough, with the reasons.
+  It is a protocol extension (`OP_REQ_PROBE`) between two PeriWire computers newer than 0.1.5. Camera and audio device cards show what they need (`iso` in the device list).
+- **Attaching a camera or audio device checks the link first** and warns (CLI, app, MCP) when it is weak for that device; it never refuses. `PERIWIRE_LINKCHECK=0` skips it.
+- `tools/iso-e2e.sh`: a loopback test on one computer with throw-away daemons.
+
+### Fixed
+- **Control transfers to a device reported zero bytes written.** A USB video driver checks that its probe/commit request was taken in full and refused the camera; other devices ignored it. The count is now the bytes the device took.
+- **A device with a driver that binds several interfaces (a camera, a headset) did not get its driver back** after being shared: interfaces were released first to last, so the driver found its streaming interface still claimed. They are released last to first.
+
 ## [0.1.5] — 2026-11-21
 
 The `usbmuxd` restore, now also when the daemon is stopped.

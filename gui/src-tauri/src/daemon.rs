@@ -16,6 +16,7 @@ const PAGE_METHODS: &[&str] = &[
     "doctor",
     "logs",
     "remote.list",
+    "link.test",
     "share.add",
     "share.remove",
     "attach",

@@ -26,3 +26,4 @@ Note: `dmesg` can be flooded by audit spam on some systems; use `journalctl -k`.
 via a short-lived HTTP server on the builder's libvirt bridge. Setup: `python3 -m venv .venv && .venv/bin/pip install pywinrm requests-ntlm`.
 Credentials come from `.env` (`windows_user`/`windows_password`, falling back to `username`/`sudo_password`) and are never printed.
 For the Windows VM over Tailscale set `WINRUN_HOST=<its Tailscale address>` (direct, no tunnel). Away from the LAN set `PERIWIRE_REMOTE_HOST` to the builder's Tailscale address (it also overrides `REMOTE_HOST` in the other tools).
+- `iso-e2e.sh` — loopback test of camera forwarding and the connection check on this computer, with two throw-away daemons (the installed one is left alone): `up <busid>`, `link [busid]`, `camera`, `down`.

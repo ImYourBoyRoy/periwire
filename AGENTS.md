@@ -14,7 +14,7 @@ claude mcp add periwire -- periwire mcp        # Claude Code
 
 The MCP server talks to the local daemon (`periwire daemon`, or `sudo periwire service install`). Start with these tools:
 `periwire_status` (what is going on), `periwire_doctor` (problems and how to fix them), `periwire_list_devices`,
-`periwire_list_remote {addr}`, then `periwire_share` / `periwire_attach` / `periwire_eject`. Every CLI command takes
+`periwire_list_remote {addr}`, then `periwire_share` / `periwire_attach` / `periwire_eject` (`periwire_link_test {addr, busid?}` measures the link first). Every CLI command takes
 `--json`; `periwire api` lists the control API methods.
 
 **Rules that matter:**
@@ -24,7 +24,7 @@ The MCP server talks to the local daemon (`periwire daemon`, or `sudo periwire s
 - The tools move connections only; they cannot read, write or format a device.
 - On Linux, attaching needs root (`sudo periwire daemon`); on macOS it needs Apple's host-controller entitlement or SIP relaxed
   ([docs/MACOS.md](docs/MACOS.md)); on Windows the driver is installed with `periwire driver install`.
-- Webcams and USB audio (isochronous) are not supported yet.
+- Webcams and USB audio (isochronous) are carried, but need a quick link (round trip under about 10 ms): run `periwire_link_test {addr, busid}` before attaching one and tell the user the verdict. Verified with a webcam on Linux only; audio, Windows and macOS importing are not verified (macOS cannot import them).
 
 Docs: [MCP](docs/MCP.md) · [CLI](docs/CLI.md) · [getting started](docs/GETTING-STARTED.md) · [troubleshooting](docs/TROUBLESHOOTING.md) ·
 [API](docs/API.md) · [security model](docs/SECURITY.md).

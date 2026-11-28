@@ -84,4 +84,16 @@ Mutual TLS 1.3 with fingerprint pinning (`tls.rs`, rustls with custom verifiers;
   network-forwarded device. periwire runs inside the guest instead.
 - *Kernel `usbip` tools*: Linux-only, unauthenticated and unencrypted, no safe-eject or management. periwire keeps the
   kernel's `vhci_hcd` for the Linux import path but replaces everything around it.
-- *Per-device isochronous support* (webcams, audio) is not implemented yet.
+- *Hypervisor-level camera passthrough* is not the point either: periwire carries the camera's own transfers over the network, whatever machine uses them.
+
+## Isochronous transfers and the connection check
+
+**Isochronous transfers** (`export/iso.rs`, `export/iso_pump.rs`). Bulk and control transfers run one at a time on blocking libusb calls. An isochronous endpoint cannot be driven that way: transfers must already be queued behind one another when the previous one
+ends. So isochronous requests from the importer go straight into libusb as asynchronous transfers, in arrival order, and one small thread per session drives libusb's event loop; the completion callback builds the reply (data compacted to what each packet moved, plus the per-packet
+descriptors) and queues it for the importer. Every transfer is registered before it is submitted and removed (under the same lock) before it is freed, which is what makes cancelling one from another thread safe; a session ends by cancelling everything in flight and waiting for the callbacks before the device is released.
+For IN endpoints the exporter also **reads ahead**: it keeps about 64 ms of its own transfers queued on the endpoint at all times and holds what they receive in a queue (at most a quarter of a second). An importer transfer is answered as soon as the queue holds enough packets (its packets are consecutive intervals, so the queue length is time), so a request that arrives late
+receives older data instead of losing it. A change of interface setting, configuration or a reset ends the read-ahead (it is shaped by the active setting) and the next transfer starts a new one. Packet counts, sizes and offsets from the peer are checked against the transfer's buffer before anything is indexed (`usbip-proto/src/iso.rs`).
+
+**The connection check** (`linktest/`, `OP_REQ_PROBE` 0x8f03). An extension next to `OP_REQ_DEVINFO`, spoken inside the same mutual TLS: the asking side sends a small request, and the answering side takes part in up to three timed phases: paced pings (round trip, jitter, pauses), a stream of frames on a fixed schedule at the device's own rate (shaped like its
+traffic), and a bulk transfer each way (throughput). Every number in the request is limited before anything is allocated or waited for (`usbip-proto/src/probe.rs`), at most two checks run at once, and the whole exchange is bounded in time. The verdict (`linktest/verdict.rs`) judges the round-trip time against what the device's driver keeps in flight, the throughput against what the device's descriptors say it may use
+(`export/isoinfo.rs` reads that), and says why. The thresholds are rules of thumb; the raw numbers are always returned beside them.
